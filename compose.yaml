@@ -1,0 +1,17 @@
+services:
+  frontend:
+    build:
+      context: ./frontend
+    networks:
+      - labstructanalyzer
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    networks:
+      - labstructanalyzer
+
+networks:
+    labstructanalyzer:
+      driver: bridge
