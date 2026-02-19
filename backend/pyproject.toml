@@ -1,6 +1,13 @@
 [project]
-name = "revex"
+name = "REVEX"
 version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "fastapi[standard]>=0.129.0",
+]
+
+
+[project.scripts]
+dev = "main:run_dev"
+prod = "main:run_prod"
