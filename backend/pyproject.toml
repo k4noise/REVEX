@@ -4,10 +4,21 @@ version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.12"
 dependencies = [
+    "authx>=1.5.1",
     "fastapi[standard]>=0.129.0",
+    "pylti1p3>=2.0.0",
+    "redis>=7.2.0",
+    "sqlalchemy>=2.0.46",
+    "structlog>=25.5.0",
 ]
 
 
 [project.scripts]
 dev = "main:run_dev"
 prod = "main:run_prod"
+
+[dependency-groups]
+dev = [
+    "aiosqlite>=0.22.1",
+    "alembic>=1.18.4",
+]

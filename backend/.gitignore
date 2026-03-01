@@ -8,3 +8,10 @@ wheels/
 
 # Virtual environments
 .venv
+.env
+*.db
+*.iml
+/.idea/*
+
+/config/keys/*
+/config/lti_config.json
