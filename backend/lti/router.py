@@ -1,5 +1,4 @@
 import os
-from urllib.parse import urljoin
 
 from fastapi import APIRouter, Query, Depends, status
 from fastapi.responses import RedirectResponse, JSONResponse
@@ -7,7 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pylti1p3.oidc_login import OIDCException
 
 from config.auth import auth
+from core.auth_depedency import get_user_base
 from core.db import get_session
+from core.user_model import User
 from lti.depedencies import get_lti_request, get_lti_cache_storage
 from lti.services.jwt import JwtService
 from lti.services.launch import LaunchService
@@ -52,14 +53,28 @@ async def launch(
 
     launch_service = LaunchService(session)
     user_id, course_id, show_policy = await launch_service.process_launch(message_launch)
-    user_claims = JwtService().create_user_claims_at_message_launch(message_launch, course_id)
 
-    access_token = auth.create_access_token(uid=str(user_id),data=user_claims)
-    refresh_token = auth.create_refresh_token(uid=str(user_id),data=user_claims)
-
-    base_url = urljoin(os.getenv("FRONTEND_URL", ""), "/templates")
+    access_token, refresh_token = JwtService().create_tokens_for_launch(user_id, message_launch, course_id, show_policy)
+    base_url = os.getenv("FRONTEND_URL", "")
     response = RedirectResponse(url=base_url, status_code=status.HTTP_302_FOUND)
 
+    auth.set_access_cookies(access_token, response=response)
+    auth.set_refresh_cookies(refresh_token, response=response)
+    return response
+
+@router.post("/accept-policy")
+async def accept_policy(
+        session: AsyncSession = Depends(get_session),
+        current_user: User = Depends(get_user_base),
+):
+    launch_service = LaunchService(session)
+    updated = await launch_service.update_user_policy(int(current_user.id))
+
+    if not updated:
+        return JSONResponse({"detail": "User not found"}, status.HTTP_404_NOT_FOUND)
+
+    response = JSONResponse({"status": "ok"})
+    access_token, refresh_token = JwtService().create_tokens_for_user(current_user, accepted_policy=True)
     auth.set_access_cookies(access_token, response=response)
     auth.set_refresh_cookies(refresh_token, response=response)
     return response
@@ -68,3 +83,4 @@ async def launch(
 @router.get("/jwks")
 async def jwks(lti_request: FastAPIRequest = Depends(get_lti_request)):
     return JSONResponse(lti_request.get_tool().get_jwks())
+

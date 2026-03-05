@@ -10,13 +10,17 @@ class LaunchService:
 
     async def process_launch(self, message_launch):
         launch_data = message_launch.get_launch_data()
-
         iss = launch_data.get('iss')
 
         res = await self.db.execute(select(LtiPlatform).filter_by(issuer=iss))
         platform = res.scalars().first()
         if not platform:
-            platform = LtiPlatform(issuer=iss, guid=launch_data.get('https://purl.imsglobal.org/spec/lti/claim/tool_platform', {}).get('guid', 'unknown'))
+            platform = LtiPlatform(
+                issuer=iss,
+                guid=launch_data.get(
+                    'https://purl.imsglobal.org/spec/lti/claim/tool_platform', {}
+                ).get('guid', 'unknown')
+            )
             self.db.add(platform)
             await self.db.flush()
 
@@ -28,13 +32,17 @@ class LaunchService:
 
         show_policy = False
         if not user:
-            user = LtiUser(platform_id=platform.id, lti_user_id=lti_user_id, is_accept_policy=True)
+            user = LtiUser(
+                platform_id=platform.id,
+                lti_user_id=lti_user_id,
+                is_accept_policy=False,
+            )
             self.db.add(user)
+            await self.db.flush()
             show_policy = True
         else:
             if not user.is_accept_policy:
                 show_policy = True
-            user.is_accept_policy = True
 
         context = launch_data.get('https://purl.imsglobal.org/spec/lti/claim/context', {})
         lti_context_id = context.get('id')
@@ -46,6 +54,18 @@ class LaunchService:
         if not course:
             course = LtiCourse(platform_id=platform.id, lti_context_id=lti_context_id)
             self.db.add(course)
+            await self.db.flush()
 
-        await self.db.commit()
         return user.id, course.id, show_policy
+
+
+    async def update_user_policy(self, user_id: int):
+        res = await self.db.execute(
+            select(LtiUser).filter_by(id=user_id)
+        )
+        user = res.scalars().first()
+
+        if user:
+            user.is_accept_policy = True
+            return user
+        return None
