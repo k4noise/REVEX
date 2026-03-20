@@ -2,7 +2,7 @@ from typing import Sequence, Optional
 
 from pylti1p3.message_launch import MessageLaunch
 
-from core.user_model import UserRole
+from core.auth.user_model import UserRole
 from lti.services.nrps import NrpsService
 
 

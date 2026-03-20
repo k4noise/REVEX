@@ -1,7 +1,7 @@
 from pylti1p3.message_launch import MessageLaunch
 
 from config.auth import auth
-from core.user_model import  User
+from core.auth.user_model import  User
 from lti.services.user import UserService
 
 

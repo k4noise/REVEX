@@ -3,7 +3,7 @@ from fastapi import Depends, HTTPException
 from starlette import status
 
 from config.auth import auth
-from core.user_model import UserRole, User
+from core.auth.user_model import UserRole, User
 
 
 async def get_user_base(

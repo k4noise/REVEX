@@ -6,9 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pylti1p3.oidc_login import OIDCException
 
 from config.auth import auth
-from core.auth_depedency import get_user_base
+from core.auth.depedency import get_user_base
 from core.db import get_session
-from core.user_model import User
+from core.auth.user_model import User
 from lti.depedencies import get_lti_request, get_lti_cache_storage
 from lti.services.jwt import JwtService
 from lti.services.launch import LaunchService

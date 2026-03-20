@@ -31,6 +31,8 @@ config.set_main_option("sqlalchemy.url", url)
 # for 'autogenerate' support
 # from myapp import mymodel
 from lti.models import LtiPlatform, LtiUser, LtiCourse
+from template.models.template import Template
+from template.models.template_element import TemplateElement
 # target_metadata = mymodel.Base.metadata
 target_metadata = Base.metadata
 
