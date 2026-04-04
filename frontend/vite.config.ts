@@ -10,7 +10,6 @@ dotenv.config({
   path: path.resolve(__dirname, ".env"),
 });
 
-
 export default defineConfig({
   plugins: [
     tanstackRouter({ target: "react", autoCodeSplitting: true }),
@@ -36,7 +35,7 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path,
       },
-      "/images": {
+      "/files": {
         target: process.env.BACKEND_URL,
         changeOrigin: true,
         rewrite: (path) => path,
