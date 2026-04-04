@@ -19,7 +19,6 @@ class TemplateElementService:
         ids_to_delete: list[uuid.UUID] = []
         updates_map: dict[uuid.UUID | str, dict[str, Any]] = {}
 
-        # Карта для конвертации временных ID (str) в реальные UUID
         temp_id_map: dict[str | uuid.UUID, uuid.UUID] = {}
         create_patches: list[CreateElementPatch] = []
 

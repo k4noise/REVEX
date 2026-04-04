@@ -2,19 +2,19 @@ import os
 import mimetypes
 from typing import Optional, Sequence
 import boto3
+import structlog
 from botocore.exceptions import NoCredentialsError, ClientError
 from .storage import Storage
-from ...core.logger import GlobalLogger
 
 
 class S3Storage(Storage):
     REQUIRED_ENV_VARS = ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_S3_BUCKET', 'AWS_S3_ENDPOINT_URL']
 
-    def __init__(self):
+    def __init__(self, logger = structlog.get_logger(__name__)):
         self.bucket_name = os.environ.get('AWS_S3_BUCKET')
         self.region_name = os.environ.get('AWS_DEFAULT_REGION', 'eu-north-1')
         self.endpoint_url = os.environ.get('AWS_S3_ENDPOINT_URL')
-        self.logger = GlobalLogger().get_logger(__name__)
+        self.logger = logger
         self._s3_client = None
         self._initialize()
 

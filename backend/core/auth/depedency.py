@@ -9,8 +9,7 @@ from core.auth.user_model import UserRole, User
 async def get_user_base(
         payload: TokenPayload = Depends(auth.access_token_required),
 ) -> User:
-    extra = payload.extra_dict or {}
-    accepted_policy = bool(extra.get("accepted_policy"))
+    accepted_policy = getattr(payload, "accepted_policy", False)
 
     try:
         roles = [UserRole(r) for r in (payload.scopes or [])]
@@ -20,8 +19,8 @@ async def get_user_base(
     return User(
         id=str(payload.sub),
         roles=roles,
-        launch_id=str(payload.launch_id),
-        course_id=str(payload.course_id),
+        launch_id=str(getattr(payload, "launch_id", "")), # Тоже лучше через getattr на всякий случай
+        course_id=str(getattr(payload, "course_id", "")),
         accepted_policy=accepted_policy,
     )
 

@@ -1,8 +1,7 @@
 import uuid
 from typing import Optional, TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, Index, String, Text
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy import ForeignKey, Index, String, Text, JSON, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from core.db import Base
@@ -15,19 +14,19 @@ class TemplateElement(Base):
     __tablename__ = "template_elements"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         primary_key=True,
         default=uuid.uuid4,
     )
 
     template_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("templates.id", ondelete="CASCADE"),
         nullable=False,
     )
 
     parent_element_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("template_elements.id", ondelete="CASCADE"),
         nullable=True,
     )
@@ -38,7 +37,7 @@ class TemplateElement(Base):
     data: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     display_mode: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
 
-    properties: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    properties: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
 
     template: Mapped["Template"] = relationship(
         back_populates="elements",

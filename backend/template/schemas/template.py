@@ -3,11 +3,12 @@ from __future__ import annotations
 import uuid
 from typing import Optional, Sequence
 
-from fastapi_hypermodel import HALLinks, FrozenDict, HALFor, HALHyperModel
+from fastapi_hypermodel import HALLinks, FrozenDict, HALFor
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 from core.auth.user_model import User
+from core.halhypermodel import HALHyperModel
 from template.models.template import Template
 from template.schemas.template_element import TemplatePatchRequest, TemplateElementResponse
 
@@ -26,6 +27,8 @@ class TemplateUpdateRequest(CamelCaseModel):
     max_score: Optional[int] = None
     elements: Optional[TemplatePatchRequest] = None
 
+class TemplateManyRequest(CamelCaseModel):
+    ids: list[uuid.UUID]
 
 class TemplateStructure(CamelCaseModel):
     id: uuid.UUID
@@ -74,6 +77,10 @@ class TemplateDetailResponse(TemplateStructure, HALHyperModel):
             {"template_id": "<id>"},
             condition=lambda values: values["user"] and values["user"].is_teacher(),
         ),
+        "upload_image": HALFor(
+            "save_image",
+            condition=lambda values: values["user"] and values["user"].is_teacher(),
+        ),
         "all": HALFor("get_templates"),
     })
 
@@ -103,16 +110,26 @@ class TemplateCourseSummary(HALHyperModel):
             {"template_id": "<id>"},
             condition=lambda values: values["user"] and values["user"].is_teacher(),
         ),
-        "get_reports": HALFor(
-            "get_reports_by_template",
+        "delete": HALFor(
+            "remove_template",
             {"template_id": "<id>"},
-            condition=lambda values: values["user"] and values["user"].is_instructor(),
+            condition=lambda values: values.get("user") and values["user"].is_teacher(),
         ),
-        "create_report": HALFor(
-            "create_report",
+        "publish": HALFor(
+            "publish_template",
             {"template_id": "<id>"},
-            condition=lambda values: values["user"] and values["user"].is_student(),
+            condition=lambda values:  values["is_draft"] is True,
         ),
+        # "get_reports": HALFor(
+        #     "get_reports_by_template",
+        #     {"template_id": "<id>"},
+        #     condition=lambda values: values["user"] and values["user"].is_instructor(),
+        # ),
+        # "create_report": HALFor(
+        #     "create_report",
+        #     {"template_id": "<id>"},
+        #     condition=lambda values: values["user"] and values["user"].is_student(),
+        # ),
     })
 
     model_config = ConfigDict(
@@ -142,6 +159,14 @@ class TemplateCourseCollection(HALHyperModel):
         "add_template": HALFor(
             "parse_template",
             condition=lambda values: values["user"] and values["user"].is_teacher(),
+        ),
+        "publish_many": HALFor(
+            "publish_many_templates",
+            condition=lambda values:  values["user"] and values["user"].is_teacher(),
+        ),
+        "delete_many": HALFor(
+            "delete_many_templates",
+            condition=lambda values:  values["user"] and values["user"].is_teacher(),
         ),
     })
 

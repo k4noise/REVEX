@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import uuid
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth.user_model import User
-from template.exceptions import InvalidTransitionException, InvalidCourseAccessDeniedException
+from lti.services.course import CourseService
+from template.exceptions import InvalidTransitionException, InvalidCourseAccessDeniedException, \
+    TemplateNotFoundException
 from template.models.template import Template
 from template.repository.template import TemplateRepository
 from template.schemas.template import (
@@ -16,7 +17,7 @@ from template.schemas.template import (
 from template.schemas.template_element import TemplatePatchRequest
 from template.service.template_element import TemplateElementService
 from lti.services.ags import AgsService
-from core.files.services.hybrid_storage import HybridStorage
+from files.services.hybrid_storage import HybridStorage
 
 
 class TemplateAccessVerifier:
@@ -38,11 +39,9 @@ class TemplateService:
             self,
             repository: TemplateRepository,
             elements_service: TemplateElementService,
-            session: AsyncSession
     ):
         self.repository = repository
         self.elements_service = elements_service
-        self.session = session
 
     async def create_from_file(
             self,
@@ -53,7 +52,7 @@ class TemplateService:
         """Создает новый шаблон из файла"""
         template = Template(
             course_id=user.course_id,
-            user_id=user.sub,
+            user_id=user.id,
             name=name
         )
         template = await self.repository.create(template)
@@ -69,12 +68,12 @@ class TemplateService:
         TemplateAccessVerifier(template).is_valid_course(user)
 
         tree = self.elements_service.build_tree(template.elements)
-
         return TemplateDetailResponse.from_domain(template, user, tree)
 
     async def get_all_by_course(
             self,
             user: User,
+            course_service: CourseService,
             include_drafts: bool = True
     ) -> TemplateCourseCollection:
         """Получает все шаблоны курса"""
@@ -82,7 +81,7 @@ class TemplateService:
             user.course_id,
             include_drafts
         )
-        return TemplateCourseCollection.from_domain(templates, user, user.course_name)
+        return TemplateCourseCollection.from_domain(templates, user, course_service.name)
 
     async def update(
             self,
@@ -122,10 +121,7 @@ class TemplateService:
 
         template.is_draft = False
         await self.repository.update(template)
-        await ags_service.create_lineitem({
-            "label": template.name,
-            "scoreMaximum": template.max_score
-        })
+        ags_service.create_lineitem(template)
 
     async def delete(
             self,
@@ -136,7 +132,7 @@ class TemplateService:
     ) -> None:
         template = await self.repository.get(user.course_id, template_id)
         if not template:
-            raise TemplateNotFoundException()
+            raise TemplateNotFoundException(template_id)
 
         TemplateAccessVerifier(template).is_valid_course(user)
 
@@ -149,5 +145,51 @@ class TemplateService:
         await self.repository.delete(template)
 
         if media_keys:
-            await file_storage.delete_many(media_keys)
-        await ags_service.delete_lineitem(template_id)
+            file_storage.delete_many(media_keys)
+        ags_service.delete_lineitem(template_id)
+
+    async def publish_many(
+                self,
+                user: User,
+                template_ids: list[uuid.UUID],
+                ags_service: AgsService
+        ) -> None:
+        templates = await self.repository.get_many(user.course_id, template_ids)
+        if not templates:
+            return
+
+        for template in templates:
+            TemplateAccessVerifier(template).is_valid_course(user).can_publish()
+            template.is_draft = False
+
+        await self.repository.session.flush()
+
+        for template in templates:
+            ags_service.create_lineitem(template)
+
+    async def delete_many(
+            self,
+            user: User,
+            template_ids: list[uuid.UUID],
+            file_storage: HybridStorage,
+            ags_service: AgsService
+    ) -> None:
+        templates = await self.repository.get_many(user.course_id, template_ids)
+        if not templates:
+            return
+
+        for template in templates:
+            TemplateAccessVerifier(template).is_valid_course(user)
+
+        media_keys_to_delete = []
+        for template in templates:
+            keys = await self.elements_service.get_media_keys(template.id)
+            media_keys_to_delete.extend(keys)
+
+        await self.repository.delete_many(user.course_id, templates)
+
+        for template in templates:
+            ags_service.delete_lineitem(template.id)
+
+        # if media_keys_to_delete:
+        #     file_storage.delete_many(media_keys_to_delete)

@@ -1,18 +1,20 @@
 import os
 from pathlib import Path
 from typing import Optional
+
+import structlog
+
+from config.main import FILES_STORAGE_DIR
 from .storage import Storage
-from ...core.logger import GlobalLogger
 
 
 class LocalStorage(Storage):
-    def __init__(self, base_path: str):
+    def __init__(self, base_path: str, logger = structlog.get_logger(__name__)):
         self.base_path = Path(base_path)
-        self.logger = GlobalLogger().get_logger(__name__)
+        self.logger = logger
 
     @staticmethod
     def can_init(base_path: Optional[str] = None) -> bool:
-        from ...configs.config import FILES_STORAGE_DIR
         path = Path(base_path or FILES_STORAGE_DIR)
         return path.exists() and os.access(path, os.W_OK)
 

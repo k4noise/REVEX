@@ -48,3 +48,16 @@ class TemplateRepository:
         statement = statement.order_by(Template.is_draft.asc(), desc(Template.created_at))
         result = await self.session.execute(statement)
         return result.scalars().all()
+
+    async def get_many(self, course_id: str, template_ids: Sequence[uuid.UUID]) -> Sequence[Template]:
+        statement = select(Template).where(
+            Template.course_id == course_id,
+            Template.id.in_(template_ids)
+        )
+        result = await self.session.execute(statement)
+        return result.scalars().all()
+
+    async def delete_many(self, course_id: str, templates: Sequence[Template]) -> None:
+        for template in templates:
+            if template.course_id == course_id:
+                await self.session.delete(template)

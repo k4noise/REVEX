@@ -1,5 +1,6 @@
 import os
 
+from authx import TokenPayload
 from fastapi import APIRouter, Query, Depends, status
 from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,7 +9,7 @@ from pylti1p3.oidc_login import OIDCException
 from config.auth import auth
 from core.auth.depedency import get_user_base
 from core.db import get_session
-from core.auth.user_model import User
+from core.auth.user_model import User, UserRole
 from lti.depedencies import get_lti_request, get_lti_cache_storage
 from lti.services.jwt import JwtService
 from lti.services.launch import LaunchService
@@ -78,6 +79,42 @@ async def accept_policy(
     auth.set_access_cookies(access_token, response=response)
     auth.set_refresh_cookies(refresh_token, response=response)
     return response
+
+
+@router.post("/jwt-refresh", summary="Обновить Access и Refresh токены")
+async def refresh_tokens(
+        payload: TokenPayload = Depends(auth.refresh_token_required),
+):
+    try:
+        user_id = str(payload.sub)
+        roles = [UserRole(r) for r in getattr(payload, "scopes", [])]
+        launch_id = str(getattr(payload, "launch_id", ""))
+        course_id = str(getattr(payload, "course_id", ""))
+        accepted_policy = getattr(payload, "accepted_policy", False)
+
+        current_user = User(
+            id=user_id,
+            roles=roles,
+            launch_id=launch_id,
+            course_id=course_id,
+            accepted_policy=accepted_policy,
+        )
+
+        access_token, new_refresh_token = JwtService().create_tokens_for_user(
+            user=current_user,
+            accepted_policy=accepted_policy
+        )
+        response = JSONResponse({"status": "ok", "detail": "Tokens refreshed"})
+
+        auth.set_access_cookies(access_token, response=response)
+        auth.set_refresh_cookies(new_refresh_token, response=response)
+        return response
+
+    except Exception as e:
+        return JSONResponse(
+            {"detail": f"Failed to refresh token: {str(e)}"},
+            status_code=status.HTTP_401_UNAUTHORIZED
+        )
 
 
 @router.get("/jwks")
