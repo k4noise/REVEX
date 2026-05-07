@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import base64
-import logging
 import os
 import re
 import uuid
@@ -9,10 +8,12 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
+import structlog
 from dedoc import DedocManager
 from pydantic import BaseModel, Field
 
 from files.services.hybrid_storage import HybridStorage
+from template.exceptions import TemplateParseException
 from template.schemas.template_element import (
     AnyElementPayload,
     AnyPatch,
@@ -31,7 +32,7 @@ from template.schemas.template_element import (
     TextElementPayload,
 )
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -46,10 +47,27 @@ class ParserConfig:
         re.I,
     )
     MARKER_RE: re.Pattern = re.compile(
-        r"^((?:\d+(?:\.\d+)*)[\.\)]|[a-zA-Zа-яА-ЯёЁ][\.\)]|[•\-\*●])[\s\xA0]+"
+        r"^((?:\d+[a-zA-Zа-яА-ЯёЁ]?(?:\.\d+[a-zA-Zа-яА-ЯёЁ]?)*)[\.\)]"
+        r"|[a-zA-Zа-яА-ЯёЁ][\.\)]"
+        r"|[•\-\*●])"
+        r"[\s\xA0]+"
     )
     ORPHAN_DOT_RE: re.Pattern = re.compile(r"^\.\s+")
     BULLET_NORMALIZE_RE: re.Pattern = re.compile(r"^[●·■]\s*")
+    QUESTION_SPLIT_RE: re.Pattern = re.compile(
+        r"(?:\r?\n)+"  # пустые строки
+        r"\s*"
+        r"(?="
+        r"(?:"
+        r"\d+[a-zA-Zа-яА-ЯёЁ]?"
+        r"(?:\.\d+[a-zA-Zа-яА-ЯёЁ]?)*"
+        r"[\.\)]"
+        r"|[a-zA-Zа-яА-ЯёЁ][\.\)]"
+        r"|[•\-\*●]"
+        r")"
+        r"[\s\xA0]"
+        r")"
+    )
     STYLE_TO_LEVEL: Dict[str, int] = field(
         default_factory=lambda: {
             "title": 1,
@@ -157,13 +175,13 @@ def _clean_text(raw: str) -> Tuple[Optional[str], str]:
 
     if match:
         marker = match.group(1)
-        text = text[match.end():].strip()
+        text = text[match.end() :].strip()
         if marker == ".":
             marker = "•"
     else:
         orphan = CONFIG.ORPHAN_DOT_RE.match(text)
         if orphan:
-            text = text[orphan.end():].strip()
+            text = text[orphan.end() :].strip()
 
     text = CONFIG.MULTI_SPACE_RE.sub(" ", text)
     return marker, text
@@ -222,8 +240,6 @@ def _build_table_node(table_data: dict) -> InternalNode:
         cells: List[InternalNode] = []
 
         for cell in row:
-            # Пропускаем ячейки, которые были поглощены при объединении (merge)
-            # В противном случае HTML сетка таблицы на клиенте сломается
             if cell.get("invisible", False):
                 continue
 
@@ -238,7 +254,6 @@ def _build_table_node(table_data: dict) -> InternalNode:
                 text="\n".join(lines),
             )
 
-            # Достаем rowspan/colspan из спарсенных dedoc данных
             cell_metadata = {}
             if cell.get("rowspan", 1) > 1:
                 cell_metadata["rowspan"] = cell.get("rowspan")
@@ -253,7 +268,6 @@ def _build_table_node(table_data: dict) -> InternalNode:
                 )
             )
 
-        # Добавляем строку только если в ней остались видимые ячейки
         if cells:
             rows.append(
                 InternalNode(
@@ -346,7 +360,10 @@ class TreeRefiner:
 
     def _transform_node(self, node: InternalNode, depth: int) -> InternalNode:
         if depth > CONFIG.MAX_TREE_DEPTH:
-            logger.warning("max nesting depth %d reached", CONFIG.MAX_TREE_DEPTH)
+            logger.warning(
+                "parser.max_tree_depth_reached",
+                max_depth=CONFIG.MAX_TREE_DEPTH,
+            )
             return node
 
         node = self._inject_media(node)
@@ -381,10 +398,48 @@ class TreeRefiner:
         return node.copy_with(children=extra_children + node.children)
 
     def _transform_children(self, nodes: List[InternalNode]) -> List[InternalNode]:
+        nodes = self._split_multi_question_nodes(nodes)
         nodes = self._merge_text_with_next_placeholder(nodes)
         nodes = self._convert_inline_placeholders(nodes)
         nodes = self._convert_nodes_with_placeholder_descendants(nodes)
         return nodes
+
+    def _split_multi_question_nodes(self, nodes: List[InternalNode]) -> List[InternalNode]:
+        result: List[InternalNode] = []
+
+        for node in nodes:
+            if node.node_type.value in CONFIG.SKIP_TYPES:
+                result.append(node)
+                continue
+
+            text = node.text.strip()
+
+            if not text or len(CONFIG.PLACEHOLDER_RE.findall(text)) < 2:
+                result.append(node)
+                continue
+
+            segments = CONFIG.QUESTION_SPLIT_RE.split(text)
+            segments_with_ph = [s for s in segments if s.strip() and _has_placeholder(s)]
+            if len(segments_with_ph) < 2:
+                result.append(node)
+                continue
+
+            for segment in segments:
+                segment = segment.strip()
+                if not segment:
+                    continue
+                result.append(
+                    InternalNode(
+                        node_id=str(uuid.uuid4()),
+                        text=segment,
+                        node_type=node.node_type,
+                        metadata=node.metadata.copy(),
+                        annotations=node.annotations,
+                        children=[],
+                    )
+                )
+
+        return result
 
     def _merge_text_with_next_placeholder(self, nodes: List[InternalNode]) -> List[InternalNode]:
         if len(nodes) < 2:
@@ -641,7 +696,8 @@ class TreeRefiner:
         hints = [
             child.metadata.get("hint", "")
             for child in node.children
-            if child.node_type == NodeType.ANSWER_FIELD and child.metadata.get("hint", "")
+            if child.node_type == NodeType.ANSWER_FIELD
+               and child.metadata.get("hint", "")
         ]
         hint = hints[0] if hints else ""
 
@@ -761,7 +817,6 @@ class PatchFactory:
             case NodeType.ROW:
                 return RowElementPayload(type=ElementType.ROW, **common)
             case NodeType.CELL:
-                # Передаем rowspan и colspan в Payload ячейки
                 cell_kwargs = {"type": ElementType.CELL, **common}
                 if "rowspan" in node.metadata:
                     cell_kwargs["rowspan"] = node.metadata["rowspan"]
@@ -805,31 +860,89 @@ class DedocTemplateParser:
         self.attachments_dir = attachments_dir
 
     def parse(self, file_path: str) -> List[AnyPatch]:
+        """
+        Полный цикл парсинга:
+        - вызов dedoc;
+        - обработка вложений (картинки/таблицы);
+        - построение дерева;
+        - генерация патчей.
+
+        Любая ошибка логируется и выбрасывается как TemplateParseException,
+        чтобы выше по стеку можно было отдать 400.
+        """
         document_uuid = str(uuid.uuid4())
-        api_data = self._extract(file_path)
-
-        attachments_map = self._process_attachments(
-            api_data.get("attachments", []) or [],
-            document_uuid,
-            )
-        tables_map = self._build_tables_map(api_data)
-
-        refiner = TreeRefiner()
-        refiner.tables = tables_map
-        refiner.attachments = attachments_map
-
-        root_data = api_data.get("content", {}).get("structure") or {
-            "text": "",
-            "subparagraphs": [],
-        }
-
-        tree = self._build_tree(root_data)
-        refined_tree = refiner.refine(tree)
-
-        factory = PatchFactory()
-        return factory.create_patches(
-            [node for node in refined_tree.children if node.has_content()]
+        logger.info(
+            "parser.dedoc.start",
+            file_path=file_path,
+            document_uuid=document_uuid,
         )
+
+        try:
+            # 1. Достаём данные из dedoc
+            try:
+                api_data = self._extract(file_path)
+            except Exception as e:
+                logger.exception(
+                    "parser.dedoc.extract_failed",
+                    file_path=file_path,
+                    document_uuid=document_uuid,
+                    error=str(e),
+                )
+                raise TemplateParseException() from e
+
+            # 2. Вложения и таблицы
+            attachments_map = self._process_attachments(
+                api_data.get("attachments", []) or [],
+                document_uuid,
+                )
+            tables_map = self._build_tables_map(api_data)
+
+            logger.info(
+                "parser.dedoc.extracted",
+                document_uuid=document_uuid,
+                attachments=len(attachments_map),
+                tables=len(tables_map),
+            )
+
+            # 3. Построение и очистка дерева
+            refiner = TreeRefiner()
+            refiner.tables = tables_map
+            refiner.attachments = attachments_map
+
+            root_data = api_data.get("content", {}).get("structure") or {
+                "text": "",
+                "subparagraphs": [],
+            }
+
+            tree = self._build_tree(root_data)
+            refined_tree = refiner.refine(tree)
+
+            # 4. Генерация патчей
+            factory = PatchFactory()
+            patches = factory.create_patches(
+                [node for node in refined_tree.children if node.has_content()]
+            )
+
+            logger.info(
+                "parser.dedoc.ok",
+                document_uuid=document_uuid,
+                patch_count=len(patches),
+            )
+
+            return patches
+
+        except TemplateParseException:
+            # уже залогировано выше, просто пробрасываем дальше
+            raise
+        except Exception as e:
+            # любые неожиданные ошибки пайплайна
+            logger.exception(
+                "parser.dedoc.unexpected_error",
+                file_path=file_path,
+                document_uuid=document_uuid,
+                error=str(e),
+            )
+            raise TemplateParseException() from e
 
     def _build_tree(
             self,
@@ -838,7 +951,10 @@ class DedocTemplateParser:
             parent_heading_level: int = 0,
     ) -> InternalNode:
         if depth > CONFIG.MAX_TREE_DEPTH:
-            logger.warning("max nesting depth %d reached", CONFIG.MAX_TREE_DEPTH)
+            logger.warning(
+                "parser.max_tree_depth_reached",
+                max_depth=CONFIG.MAX_TREE_DEPTH,
+            )
             return InternalNode(node_id=str(uuid.uuid4()))
 
         metadata = data.get("metadata", {}) or {}
@@ -935,8 +1051,13 @@ class DedocTemplateParser:
             saved_path = self.storage.save(path, data, extension)
             if saved_path:
                 metadata["storage_path"] = saved_path
-        except Exception:
-            logger.exception("Failed to save attachment %s", metadata.get("uid", "?"))
+        except Exception as e:
+            logger.exception(
+                "parser.attachment_save_failed",
+                attachment_uid=metadata.get("uid", "?"),
+                file_name=file_name,
+                error=str(e),
+            )
 
     @staticmethod
     def _build_tables_map(api_data: dict) -> Dict[str, dict]:

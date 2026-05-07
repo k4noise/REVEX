@@ -1,10 +1,11 @@
 import uuid
 from typing import Optional, Sequence
 
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, asc
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, with_loader_criteria
 
+from report.model import Report
 from template.models.template import Template
 
 
@@ -30,7 +31,6 @@ class TemplateRepository:
         return result.scalar_one_or_none()
 
     async def update(self, template: Template) -> None:
-        self.session.add(template)
         await self.session.flush()
 
     async def delete(self, template: Template) -> None:
@@ -46,6 +46,33 @@ class TemplateRepository:
             statement = statement.where(Template.is_draft.is_(False))
 
         statement = statement.order_by(Template.is_draft.asc(), desc(Template.created_at))
+        result = await self.session.execute(statement)
+        return result.scalars().all()
+
+    async def get_all_by_course_with_reports(
+            self,
+            course_id: str,
+            user_id: str,
+            include_drafts: bool = False
+    ) -> Sequence[Template]:
+        statement = (
+            select(Template)
+            .where(Template.course_id == course_id)
+            .order_by(asc(Template.is_draft), desc(Template.created_at))
+        )
+
+        if not include_drafts:
+            statement = statement.where(Template.is_draft.is_(False))
+
+        statement = statement.options(
+            selectinload(Template.reports),
+            with_loader_criteria(
+                Report,
+                Report.author_id == user_id,
+                include_aliases=True,
+                )
+        )
+
         result = await self.session.execute(statement)
         return result.scalars().all()
 

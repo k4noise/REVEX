@@ -9,6 +9,7 @@ from core.db import Base
 
 if TYPE_CHECKING:
     from template.models.template_element import TemplateElement
+    from report.model import Report
 
 
 class Template(Base):
@@ -44,6 +45,12 @@ class Template(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
         order_by="TemplateElement.order",
+    )
+
+    reports: Mapped[list["Report"]] = relationship(
+        "Report",
+        back_populates="template",
+        cascade="all, delete-orphan",
     )
 
     __table_args__ = (

@@ -6,7 +6,6 @@ from sqlalchemy.ext.asyncio import (
     AsyncEngine,
 )
 from sqlalchemy.orm import DeclarativeBase
-
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -40,11 +39,11 @@ async def get_session() -> AsyncSession:
     async with AsyncSessionLocal() as session:
         try:
             yield session
-            await session.commit()
         except Exception:
             await session.rollback()
             raise
-
+        else:
+            await session.commit()
 
 async def close_db() -> None:
     await engine.dispose()

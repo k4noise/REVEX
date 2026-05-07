@@ -15,7 +15,7 @@ class FastAPIOIDCLogin(OIDCLogin):
             self,
             request: Request,
             tool_config: ToolConfAbstract,
-            session_service: SessionService =None,
+            session_service: SessionService=None,
             cookie_service: CookieService=None,
             launch_data_storage: FastAPICacheDataStorage=None,
     ):

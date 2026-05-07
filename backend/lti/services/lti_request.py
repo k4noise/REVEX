@@ -5,10 +5,6 @@ from pylti1p3.request import Request
 
 
 class FastAPIRequest(Request):
-    """
-    Сервис-обертка для запросов FastAPI.
-    Для извлечения параметров запроса нужно вызвать асинхронный метод parse_request
-    """
     def __init__(self, request: FastAPIReq = None):
         super().__init__()
         self.query_params = None
@@ -16,7 +12,6 @@ class FastAPIRequest(Request):
         self._request = request
 
     async def parse_request(self):
-        """Извлекает все необходимые данные из запроса"""
         self.query_params = self._request.query_params
         data = await self._request.body()
         self.body = parse_qs(data.decode('utf-8'))

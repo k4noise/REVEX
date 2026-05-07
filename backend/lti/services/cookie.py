@@ -1,7 +1,7 @@
 from fastapi import Response
 from pylti1p3.cookie import CookieService
 
-from lti.services.request import FastAPIRequest
+from lti.services.lti_request import FastAPIRequest
 
 
 class FastAPICookieService(CookieService):
@@ -19,11 +19,9 @@ class FastAPICookieService(CookieService):
         self._cookie_data_to_set[self._get_key(name)] = {"value": value, "exp": exp}
 
     def _get_key(self, key: str) -> str:
-        """Возвращает ключ с префиксом"""
         return f"{self._cookie_prefix}-{key}"
 
     def update_response(self, response: Response) -> Response:
-        """Модифицирует ответ, добавляя в него куки"""
         for key, cookie_data in self._cookie_data_to_set.items():
             cookie_kwargs = dict(
                 key=key,

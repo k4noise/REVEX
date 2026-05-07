@@ -33,6 +33,8 @@ config.set_main_option("sqlalchemy.url", url)
 from lti.models import LtiPlatform, LtiUser, LtiCourse
 from template.models.template import Template
 from template.models.template_element import TemplateElement
+from report.model import Report
+from answer.model import Answer
 # target_metadata = mymodel.Base.metadata
 target_metadata = Base.metadata
 

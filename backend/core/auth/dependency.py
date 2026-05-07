@@ -4,6 +4,7 @@ from starlette import status
 
 from config.auth import auth
 from core.auth.user_model import UserRole, User
+from structlog.contextvars import bind_contextvars
 
 
 async def get_user_base(
@@ -14,30 +15,42 @@ async def get_user_base(
     try:
         roles = [UserRole(r) for r in (payload.scopes or [])]
     except ValueError:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid role in token")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid role in token",
+        )
 
-    return User(
+    user = User(
         id=str(payload.sub),
         roles=roles,
-        launch_id=str(getattr(payload, "launch_id", "")), # Тоже лучше через getattr на всякий случай
+        launch_id=str(getattr(payload, "launch_id", "")),
         course_id=str(getattr(payload, "course_id", "")),
         accepted_policy=accepted_policy,
     )
+
+    bind_contextvars(user_id=user.id, course_id=user.course_id)
+
+    return user
 
 
 async def get_user(
         user: User = Depends(get_user_base),
 ) -> User:
     if not user.accepted_policy:
-        raise HTTPException(status_code=status.HTTP_451_UNAVAILABLE_FOR_LEGAL_REASONS, detail="Policy not accepted")
+        raise HTTPException(
+            status_code=status.HTTP_451_UNAVAILABLE_FOR_LEGAL_REASONS,
+            detail="Policy not accepted",
+        )
     return user
 
-def get_user_with_any_role(*roles: UserRole):
-    """Возвращает данные пользователя, если он имеет хотя бы одну необходимую роль"""
 
+def get_user_with_any_role(*roles: UserRole):
     async def require_any_of_roles(user: User = Depends(get_user)) -> User:
         if not any(role in roles for role in user.roles):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Forbidden",
+            )
         return user
 
     return require_any_of_roles

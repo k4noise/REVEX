@@ -2,7 +2,7 @@ from typing import Self, Dict, Union, Sequence, Mapping, Any
 
 from fastapi_hypermodel import HALHyperModel as HyperModel, FrozenDict
 from fastapi_hypermodel.hal.hal_hypermodel import HALLinkType
-from pydantic import model_validator, ConfigDict, Field, model_serializer
+from pydantic import ConfigDict, Field, model_serializer, model_validator
 
 
 class HALHyperModel(HyperModel):

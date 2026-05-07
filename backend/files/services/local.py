@@ -4,7 +4,7 @@ from typing import Optional
 
 import structlog
 
-from config.main import FILES_STORAGE_DIR
+from config.settings import FILES_STORAGE_DIR
 from .storage import Storage
 
 
