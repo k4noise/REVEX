@@ -1,7 +1,7 @@
 import type {
   TemplateElementResponse,
   DisplayMode,
-} from "@/model/templateElement";
+} from "../../../model/templateElement";
 import type { FilterMode } from "../types";
 import { isFixedHigh } from "./styles";
 import { normalizeDisplayMode } from "./validation";
@@ -13,29 +13,57 @@ export const effectiveDisplayMode = (
   return normalizeDisplayMode(element.displayMode);
 };
 
-export const checkVisibility = (
+export const shouldHideMarkers = (filterMode: FilterMode): boolean =>
+  filterMode === "key";
+
+function isElementVisibleByFilter(
   element: TemplateElementResponse,
   filter: FilterMode,
-  forceShowAll?: boolean,
-): boolean => {
-  if (forceShowAll) return true;
+): boolean {
   if (filter === "all") return true;
 
   const mode = effectiveDisplayMode(element);
   const isAlways = mode === "always";
   const isPrefer = mode === "prefer";
 
-  if (filter === "important" && (isAlways || isPrefer)) return true;
-  if (filter === "key" && isAlways) return true;
-
-  if (element.children?.length) {
-    return element.children.some((child) =>
-      checkVisibility(child, filter, forceShowAll),
-    );
+  if (filter === "important") {
+    return isAlways || isPrefer;
   }
 
-  return false;
-};
+  if (filter === "key") {
+    return isAlways;
+  }
 
-export const shouldHideMarkers = (filterMode: FilterMode): boolean =>
-  filterMode === "key";
+  return true;
+}
+
+export function filterTreeByVisibility(
+  nodes: TemplateElementResponse[],
+  filter: FilterMode,
+): TemplateElementResponse[] {
+  if (filter === "all") {
+    return nodes;
+  }
+
+  const result: TemplateElementResponse[] = [];
+
+  for (const node of nodes) {
+    const selfVisible = isElementVisibleByFilter(node, filter);
+
+    if (selfVisible) {
+      result.push(node);
+      continue;
+    }
+
+    const visibleChildren = filterTreeByVisibility(node.children ?? [], filter);
+
+    if (visibleChildren.length > 0) {
+      result.push({
+        ...node,
+        children: visibleChildren,
+      });
+    }
+  }
+
+  return result;
+}

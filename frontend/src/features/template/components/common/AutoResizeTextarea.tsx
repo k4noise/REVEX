@@ -1,22 +1,29 @@
-import React, { useRef, useLayoutEffect } from "react";
+import {
+  useRef,
+  useLayoutEffect,
+  type RefObject,
+  type TextareaHTMLAttributes,
+  memo,
+} from "react";
 import { cx } from "../../utils/styles";
 
-interface AutoResizeTextareaProps {
+type NativeTextareaProps = Omit<
+  TextareaHTMLAttributes<HTMLTextAreaElement>,
+  "value" | "onChange"
+>;
+
+interface AutoResizeTextareaProps extends NativeTextareaProps {
   value: string;
   onChange: (value: string) => void;
-  className?: string;
-  placeholder: string;
-  readOnly?: boolean;
-  inputRef?: React.RefObject<HTMLTextAreaElement>;
+  inputRef?: RefObject<HTMLTextAreaElement | null>;
 }
 
-export function AutoResizeTextarea({
+export const AutoResizeTextarea = memo(function AutoResizeTextarea({
   value,
   onChange,
   className,
-  placeholder,
-  readOnly,
   inputRef,
+  ...restProps
 }: AutoResizeTextareaProps) {
   const localRef = useRef<HTMLTextAreaElement>(null);
   const ref = inputRef ?? localRef;
@@ -24,6 +31,7 @@ export function AutoResizeTextarea({
   useLayoutEffect(() => {
     const element = ref.current;
     if (!element) return;
+
     element.style.height = "auto";
     element.style.height = `${element.scrollHeight}px`;
   }, [value, ref]);
@@ -38,13 +46,15 @@ export function AutoResizeTextarea({
         element.style.height = "auto";
         element.style.height = `${element.scrollHeight}px`;
       }}
-      readOnly={readOnly}
-      placeholder={placeholder}
       rows={1}
       className={cx(
         "resize-none overflow-hidden bg-transparent outline-none",
+        "transition-shadow duration-150",
+        !restProps.readOnly &&
+          "focus:ring-2 focus:ring-blue-500/20 focus:rounded-lg",
         className,
       )}
+      {...restProps}
     />
   );
-}
+});

@@ -20,15 +20,15 @@ export interface TemplateElementResponse {
   data?: string | null;
   level?: number | null;
   imageUrl?: string | null;
+  mediaKey?: string | null;
   altText?: string | null;
   maxScore?: number | null;
   hint?: string | null;
+  marker?: string | null;
   rowspan?: number | null;
   colspan?: number | null;
   children: TemplateElementResponse[];
 }
-
-export type PatchAction = "create" | "update" | "delete";
 
 interface BaseElementPayload {
   id: string;
@@ -63,6 +63,7 @@ export interface QuestionElementPayload extends BaseElementPayload {
 export interface AnswerElementPayload extends BaseElementPayload {
   type: "answer";
   data: string;
+  maxScore?: number | null;
 }
 
 export interface ContainerElementPayload extends BaseElementPayload {

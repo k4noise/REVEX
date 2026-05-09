@@ -1,151 +1,146 @@
-import React, { useState, useRef, useEffect, useMemo } from "react";
-import { createPortal } from "react-dom";
+import { useState, useRef, useEffect, useMemo, type RefObject } from "react";
 import type { QuestionReference } from "../../types";
+import type { QuestionGroups } from "../../hooks/useQuestions";
 import { cx } from "../../utils/styles";
 
+const MAX_VISIBLE = 140;
+
 interface QuestionPickerProps {
-  disabled?: boolean;
-  questions: QuestionReference[];
+  open: boolean;
+  onClose: () => void;
+  groups: QuestionGroups;
   onPick: (question: QuestionReference) => void;
+  triggerRef: RefObject<HTMLElement | null>;
 }
 
 export function QuestionPicker({
-  disabled,
-  questions,
+  open,
+  onClose,
+  groups,
   onPick,
+  triggerRef,
 }: QuestionPickerProps) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const buttonRef = useRef<HTMLButtonElement>(null);
   const popupRef = useRef<HTMLDivElement>(null);
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
-    if (!open) return;
-
+    if (!open) {
+      setQuery("");
+      return;
+    }
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") onClose();
     };
-
-    const handleClickOutside = (e: MouseEvent | TouchEvent) => {
-      const target = e.target as Node | null;
-      if (!target) return;
-      if (buttonRef.current?.contains(target)) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node;
       if (popupRef.current?.contains(target)) return;
-      setOpen(false);
+      if (triggerRef.current?.contains(target)) return;
+      onClose();
     };
-
     document.addEventListener("keydown", handleKeyDown);
     document.addEventListener("mousedown", handleClickOutside);
-    document.addEventListener("touchstart", handleClickOutside);
-
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
       document.removeEventListener("mousedown", handleClickOutside);
-      document.removeEventListener("touchstart", handleClickOutside);
     };
-  }, [open]);
+  }, [open, onClose, triggerRef]);
 
-  const filteredQuestions = useMemo(() => {
-    const searchQuery = query.trim().toLowerCase();
-    if (!searchQuery) return questions;
-
-    return questions.filter((question) => {
-      const searchableText =
-        `${question.marker ?? ""} ${question.text ?? ""} ${question.id}`.toLowerCase();
-      return searchableText.includes(searchQuery);
+  const filterList = (list: QuestionReference[], q: string) => {
+    if (!q) return list;
+    return list.filter((item) => {
+      const searchable =
+        `${item.marker ?? ""} ${item.text ?? ""} ${item.id}`.toLowerCase();
+      return searchable.includes(q);
     });
-  }, [query, questions]);
+  };
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return {
+      questions: filterList(groups.questions, q),
+      tableCells: filterList(groups.tableCells, q),
+    };
+  }, [query, groups.questions, groups.tableCells]);
+
+  const totalCount = filtered.questions.length + filtered.tableCells.length;
+
+  if (!open) return null;
+
+  const renderItem = (item: QuestionReference) => (
+    <button
+      key={item.id}
+      type="button"
+      onClick={() => onPick(item)}
+      className={cx(
+        "w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors",
+        "hover:bg-zinc-50 dark:hover:bg-zinc-800",
+      )}
+    >
+      <div className="text-zinc-900 dark:text-zinc-100 font-medium leading-snug">
+        {item.text || "Пустой вопрос"}
+      </div>
+      <div className="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5 font-mono">
+        {item.id}
+      </div>
+    </button>
+  );
 
   return (
-    <div className="relative shrink-0 isolate">
-      <button
-        ref={buttonRef}
-        type="button"
-        disabled={disabled}
-        onClick={() => setOpen((prev) => !prev)}
-        className={cx(
-          "h-10 px-4 rounded-lg text-sm font-semibold border transition-colors",
-          "border-blue-600 bg-blue-600 text-white hover:bg-blue-700",
-          "disabled:opacity-40",
-          "focus:outline-none focus:ring-2 focus:ring-blue-500/30",
-        )}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        title="Вставить параметр"
-      >
-        + Добавить параметр
-      </button>
+    <div
+      ref={popupRef}
+      className={cx(
+        "absolute right-0 top-full mt-2 z-[200] w-[480px] max-w-[92vw] flex flex-col",
+        "rounded-xl border border-zinc-200 bg-white shadow-xl",
+        "dark:border-zinc-700 dark:bg-[#141416]",
+        "max-h-[400px]",
+      )}
+      role="dialog"
+    >
+      <div className="px-3 pt-3">
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Поиск: номер / текст / id..."
+          autoFocus
+          className={cx(
+            "w-full h-10 rounded-lg px-3 text-sm outline-none",
+            "bg-zinc-50 border border-zinc-200 text-zinc-800",
+            "dark:bg-[#0f0f12] dark:border-zinc-700 dark:text-zinc-200",
+            "focus:ring-2 focus:ring-blue-500/20",
+          )}
+        />
+      </div>
 
-      {open &&
-        createPortal(
-          <div
-            ref={popupRef}
-            className={cx(
-              "fixed z-[9999] w-[560px] max-w-[92vw]",
-              "rounded-xl border border-zinc-200 bg-white shadow-xl",
-              "dark:border-zinc-700 dark:bg-[#141416]",
+      <div className="flex-1 overflow-auto p-3">
+        {totalCount === 0 ? (
+          <div className="px-2 py-3 text-sm text-zinc-500">
+            Ничего не найдено
+          </div>
+        ) : (
+          <div className="space-y-1">
+            {filtered.questions.length > 0 && (
+              <>
+                <div className="px-3 pt-2 pb-1 text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+                  Вопросы
+                </div>
+                {filtered.questions.slice(0, MAX_VISIBLE).map(renderItem)}
+              </>
             )}
-            style={{
-              top: buttonRef.current
-                ? buttonRef.current.getBoundingClientRect().bottom + 8
-                : 0,
-              left: buttonRef.current
-                ? buttonRef.current.getBoundingClientRect().right - 560
-                : 0,
-            }}
-            role="dialog"
-            aria-modal="false"
-          >
-            <div className="p-3">
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Поиск: номер / текст / id…"
-                className={cx(
-                  "w-full h-10 rounded-lg px-3 text-sm outline-none",
-                  "bg-zinc-50 border border-zinc-200 text-zinc-800",
-                  "dark:bg-[#0f0f12] dark:border-zinc-700 dark:text-zinc-200",
-                  "focus:ring-2 focus:ring-blue-500/20",
-                )}
-              />
-            </div>
 
-            <div className="max-h-80 overflow-auto p-3 pt-0">
-              {filteredQuestions.length === 0 ? (
-                <div className="px-2 py-3 text-sm text-zinc-500">
-                  Ничего не найдено
+            {filtered.tableCells.length > 0 && (
+              <>
+                {filtered.questions.length > 0 && (
+                  <div className="my-2 h-px bg-zinc-200 dark:bg-zinc-700" />
+                )}
+                <div className="px-3 pt-2 pb-1 text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+                  Ячейки таблиц
                 </div>
-              ) : (
-                <div className="space-y-2">
-                  {filteredQuestions.slice(0, 140).map((question) => (
-                    <button
-                      key={question.id}
-                      type="button"
-                      onClick={() => {
-                        onPick(question);
-                        setOpen(false);
-                        setQuery("");
-                      }}
-                      className={cx(
-                        "w-full text-left px-3 py-2 rounded-lg text-sm transition-colors",
-                        "hover:bg-zinc-50 dark:hover:bg-zinc-800",
-                      )}
-                    >
-                      <div className="text-zinc-900 dark:text-zinc-100 font-semibold whitespace-normal leading-snug">
-                        {question.marker ? `${question.marker} ` : ""}
-                        {question.text || "Пустой вопрос"}
-                      </div>
-                      <div className="text-[11px] text-zinc-500 break-all">
-                        {question.id}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>,
-          document.body,
+                {filtered.tableCells.slice(0, MAX_VISIBLE).map(renderItem)}
+              </>
+            )}
+          </div>
         )}
+      </div>
     </div>
   );
 }

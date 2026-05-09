@@ -46,17 +46,15 @@ export const UploadModal = ({
       return;
     }
 
-    const ok =
-      file.type ===
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
-      file.type === "application/pdf" ||
-      file.name.toLowerCase().endsWith(".docx") ||
-      file.name.toLowerCase().endsWith(".pdf");
+    const name = file.name.toLowerCase();
+    const isSupported = name.endsWith(".docx") || name.endsWith(".pdf");
 
-    if (!ok) {
+    if (!isSupported) {
       setError("Можно загружать только файлы .docx и .pdf");
       setSelectedFile(null);
-      e.currentTarget.value = "";
+      if (e.currentTarget) {
+        e.currentTarget.value = "";
+      }
       return;
     }
 
@@ -113,7 +111,7 @@ export const UploadModal = ({
             <input
               ref={fileInputRef}
               type="file"
-              accept=".docx,.pdf"
+              accept=".docx,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf"
               onChange={onFileChange}
               disabled={isPending}
               className="mb-6 block w-full cursor-pointer text-lg text-zinc-700 transition-all file:mr-6 file:rounded-xl file:border-0 file:bg-zinc-100 file:px-6 file:py-3 file:text-base file:font-semibold file:text-zinc-900 hover:file:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-60 dark:text-zinc-300 dark:file:bg-zinc-800 dark:file:text-zinc-50 dark:hover:file:bg-zinc-700"

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 
-import type { TemplateCourseSummary } from "@/model/template";
+import type { TemplateCourseSummary } from "../../../model/template";
 
 type RowMenuProps = {
   template: TemplateCourseSummary;

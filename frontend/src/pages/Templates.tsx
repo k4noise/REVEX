@@ -4,18 +4,18 @@ import { useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
-import { templateApi, queryKeys } from "@/api/template";
-import { ApiError } from "@/lib/api";
+import { templateApi, queryKeys } from "../api/template";
+import { ApiError } from "../lib/api";
 import type {
   TemplateCourseCollection,
   TemplateCourseSummary,
-} from "@/model/template";
-import { BulkActionsBar } from "@/features/templates/components/BulkActionsBar";
-import { ConfirmModal } from "@/features/templates/components/ConfirmModal";
-import { EmptyTemplatesState } from "@/features/templates/components/EmptyTemplatesState";
-import { TemplateItem } from "@/features/templates/components/TemplateItem";
-import { UploadModal } from "@/features/templates/components/UploadModal";
-import { pluralizeTemplates } from "@/features/templates/pluralize";
+} from "../model/template";
+import { BulkActionsBar } from "../features/templates/components/BulkActionsBar";
+import { ConfirmModal } from "../features/templates/components/ConfirmModal";
+import { EmptyTemplatesState } from "../features/templates/components/EmptyTemplatesState";
+import { TemplateItem } from "../features/templates/components/TemplateItem";
+import { UploadModal } from "../features/templates/components/UploadModal";
+import { pluralizeTemplates } from "../features/templates/pluralize";
 
 type ConfirmState = {
   open: boolean;
@@ -55,9 +55,6 @@ export const TemplatesPage = ({
     confirmText: "Подтвердить",
     onConfirm: () => {},
   });
-
-  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
-  const [pendingPublish, setPendingPublish] = useState<string | null>(null);
 
   const canAdd = !!collection._links.add_template;
   const publishManyHref = collection._links.publish_many?.href;
@@ -120,129 +117,143 @@ export const TemplatesPage = ({
       toast.error(e instanceof ApiError ? e.message : "Ошибка загрузки"),
   });
 
-  const deleteMutation = useMutation({
-    mutationFn: (template: TemplateCourseSummary) =>
-      templateApi.remove(template._links.delete!.href),
-    onMutate: (template) => setPendingDelete(template.id),
-    onSettled: () => setPendingDelete(null),
-    onSuccess: async (_, deletedTemplate) => {
-      queryClient.setQueryData<TemplateCourseCollection>(
-        queryKeys.collection(),
-        (oldData) => {
-          if (!oldData) return oldData;
-          return {
-            ...oldData,
-            _embedded: {
-              ...oldData._embedded,
-              templates: oldData._embedded.templates.filter(
-                (t) => t.id !== deletedTemplate.id,
-              ),
-            },
-          };
-        },
-      );
-      setConfirm((prev) => ({ ...prev, open: false }));
-      toast.success("Шаблон удален");
-    },
-    onError: (e) =>
-      toast.error(e instanceof ApiError ? e.message : "Ошибка удаления"),
-  });
+  const useOptimisticMutation = <TData, TVariables>(
+    mutationFn: (vars: TVariables) => Promise<TData>,
+    updateFn: (
+      oldData: TemplateCourseCollection | undefined,
+      vars: TVariables,
+    ) => TemplateCourseCollection | undefined,
+    successMessage: string,
+    errorMessage: string,
+  ) => {
+    return useMutation<
+      TData,
+      ApiError,
+      TVariables,
+      { previousData: TemplateCourseCollection | undefined }
+    >({
+      mutationFn,
+      onMutate: async (variables) => {
+        await queryClient.cancelQueries({ queryKey: queryKeys.collection() });
+        const previousData = queryClient.getQueryData<TemplateCourseCollection>(
+          queryKeys.collection(),
+        );
+        queryClient.setQueryData<TemplateCourseCollection>(
+          queryKeys.collection(),
+          (old) => updateFn(old, variables),
+        );
+        return { previousData };
+      },
+      onError: (err, _variables, context) => {
+        if (context?.previousData) {
+          queryClient.setQueryData(
+            queryKeys.collection(),
+            context.previousData,
+          );
+        }
+        toast.error(err.message || errorMessage);
+      },
+      onSuccess: () => {
+        toast.success(successMessage);
+      },
+      onSettled: () => {
+        queryClient.invalidateQueries({ queryKey: queryKeys.collection() });
+        setConfirm((prev) => ({ ...prev, open: false }));
+        setSelectedIds(new Set());
+      },
+    });
+  };
 
-  const publishMutation = useMutation({
-    mutationFn: (template: TemplateCourseSummary) =>
-      templateApi.publish(template._links.publish!.href),
-    onMutate: (template) => setPendingPublish(template.id),
-    onSettled: () => setPendingPublish(null),
-    onSuccess: async (_, publishedTemplate) => {
-      queryClient.setQueryData<TemplateCourseCollection>(
-        queryKeys.collection(),
-        (oldData) => {
-          if (!oldData) return oldData;
-          return {
-            ...oldData,
-            _embedded: {
-              ...oldData._embedded,
-              templates: oldData._embedded.templates.map((t) =>
-                t.id === publishedTemplate.id ? { ...t, isDraft: false } : t,
-              ),
-            },
-          };
-        },
-      );
-      toast.success("Шаблон опубликован");
+  const deleteMutation = useOptimisticMutation(
+    (template: TemplateCourseSummary) => {
+      if (!template._links.delete?.href)
+        throw new ApiError(403, "Нет прав для удаления");
+      return templateApi.remove(template._links.delete.href);
     },
-    onError: (e) =>
-      toast.error(e instanceof ApiError ? e.message : "Ошибка публикации"),
-  });
+    (oldData, deletedTemplate) => {
+      if (!oldData) return oldData;
+      return {
+        ...oldData,
+        _embedded: {
+          ...oldData._embedded,
+          templates: oldData._embedded.templates.filter(
+            (t) => t.id !== deletedTemplate.id,
+          ),
+        },
+      };
+    },
+    "Шаблон удален",
+    "Ошибка удаления",
+  );
 
-  const bulkDeleteMutation = useMutation({
-    mutationFn: () => {
+  const publishMutation = useOptimisticMutation(
+    (template: TemplateCourseSummary) => {
+      if (!template._links.publish?.href)
+        throw new ApiError(403, "Нет прав для публикации");
+      return templateApi.publish(template._links.publish.href);
+    },
+    (oldData, publishedTemplate) => {
+      if (!oldData) return oldData;
+      return {
+        ...oldData,
+        _embedded: {
+          ...oldData._embedded,
+          templates: oldData._embedded.templates.map((t) =>
+            t.id === publishedTemplate.id ? { ...t, isDraft: false } : t,
+          ),
+        },
+      };
+    },
+    "Шаблон опубликован",
+    "Ошибка публикации",
+  );
+
+  const bulkDeleteMutation = useOptimisticMutation(
+    () => {
       if (!deleteManyHref) throw new Error("No delete many endpoint");
       return templateApi.deleteMany(deleteManyHref, [...selectedIds]);
     },
-    onSuccess: async () => {
-      const count = selectedIds.size;
+    (oldData) => {
+      if (!oldData) return oldData;
       const targetIds = new Set(selectedIds);
-
-      queryClient.setQueryData<TemplateCourseCollection>(
-        queryKeys.collection(),
-        (oldData) => {
-          if (!oldData) return oldData;
-          return {
-            ...oldData,
-            _embedded: {
-              ...oldData._embedded,
-              templates: oldData._embedded.templates.filter(
-                (t) => !targetIds.has(t.id),
-              ),
-            },
-          };
+      return {
+        ...oldData,
+        _embedded: {
+          ...oldData._embedded,
+          templates: oldData._embedded.templates.filter(
+            (t) => !targetIds.has(t.id),
+          ),
         },
-      );
-
-      setSelectedIds(new Set());
-      setConfirm((prev) => ({ ...prev, open: false }));
-      toast.success(`Удалено ${count} ${pluralizeTemplates(count)}`);
+      };
     },
-    onError: () => toast.error("Ошибка удаления"),
-  });
+    `Удалено ${selectedIds.size} ${pluralizeTemplates(selectedIds.size)}`,
+    "Ошибка удаления",
+  );
 
-  const bulkPublishMutation = useMutation({
-    mutationFn: () => {
+  const bulkPublishMutation = useOptimisticMutation(
+    () => {
       if (!publishManyHref) throw new Error("No publish many endpoint");
       const ids = selectedTemplates.filter((t) => t.isDraft).map((t) => t.id);
       return templateApi.publishMany(publishManyHref, ids);
     },
-    onSuccess: async () => {
-      const published = selectedDraftCount;
+    (oldData) => {
+      if (!oldData) return oldData;
       const targetIds = new Set(
         selectedTemplates.filter((t) => t.isDraft).map((t) => t.id),
       );
-
-      queryClient.setQueryData<TemplateCourseCollection>(
-        queryKeys.collection(),
-        (oldData) => {
-          if (!oldData) return oldData;
-          return {
-            ...oldData,
-            _embedded: {
-              ...oldData._embedded,
-              templates: oldData._embedded.templates.map((t) =>
-                targetIds.has(t.id) ? { ...t, isDraft: false } : t,
-              ),
-            },
-          };
+      return {
+        ...oldData,
+        _embedded: {
+          ...oldData._embedded,
+          templates: oldData._embedded.templates.map((t) =>
+            targetIds.has(t.id) ? { ...t, isDraft: false } : t,
+          ),
         },
-      );
-
-      setSelectedIds(new Set());
-      setConfirm((prev) => ({ ...prev, open: false }));
-      toast.success(
-        `Опубликовано ${published} ${pluralizeTemplates(published)}`,
-      );
+      };
     },
-    onError: () => toast.error("Ошибка публикации"),
-  });
+    `Опубликовано ${selectedDraftCount} ${pluralizeTemplates(selectedDraftCount)}`,
+    "Ошибка публикации",
+  );
 
   const isUploadPending = uploadMutation.isPending;
   const isConfirmPending =
@@ -263,7 +274,7 @@ export const TemplatesPage = ({
       message: (
         <>
           Вы действительно хотите удалить{" "}
-          <span className="font-bold">«{template.name}»</span>?
+          <span className="font-bold">{template.name}</span>?
         </>
       ),
       danger: true,
@@ -295,7 +306,7 @@ export const TemplatesPage = ({
       ),
       danger: false,
       confirmText: "Опубликовать",
-      onConfirm: () => bulkPublishMutation.mutate(),
+      onConfirm: () => bulkPublishMutation.mutate(undefined),
     });
   };
 
@@ -314,16 +325,16 @@ export const TemplatesPage = ({
       ),
       danger: true,
       confirmText: "Удалить",
-      onConfirm: () => bulkDeleteMutation.mutate(),
+      onConfirm: () => bulkDeleteMutation.mutate(undefined),
     });
   };
-
+  const pageTitle = `${collection.courseName} — Шаблоны`;
   return (
     <>
       <Helmet>
-        <title>{collection.courseName} — Шаблоны</title>
+        <title>{pageTitle}</title>
       </Helmet>
-      <div className=" bg-[#F8FAFC] px-4 py-10 transition-colors duration-300 dark:bg-[#141416] sm:px-6">
+      <div className="bg-[#F8FAFC] px-4 py-10 transition-colors duration-300 dark:bg-[#141416] sm:px-6 min-h-screen">
         <div className="mx-auto max-w-5xl space-y-8">
           <div className="flex flex-col justify-between gap-4 border-b border-zinc-200 pb-6 dark:border-zinc-800/50 sm:flex-row sm:items-center">
             <div>
@@ -366,25 +377,27 @@ export const TemplatesPage = ({
             />
           ) : (
             <>
-              <div className="mb-3 flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  onClick={toggleAll}
-                  className="inline-flex items-center justify-center rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-[#1E1E22] dark:text-zinc-50 dark:hover:bg-zinc-800/40"
-                >
-                  {allSelected ? "Снять выделение" : "Выбрать все"}
-                </button>
-
-                {selectedIds.size > 0 && (
+              {canAdd && (
+                <div className="mb-3 flex flex-wrap items-center gap-3">
                   <button
                     type="button"
-                    onClick={() => setSelectedIds(new Set())}
-                    className="text-sm text-zinc-500 underline underline-offset-4 hover:text-zinc-700 dark:hover:text-zinc-300"
+                    onClick={toggleAll}
+                    className="inline-flex items-center justify-center rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-[#1E1E22] dark:text-zinc-50 dark:hover:bg-zinc-800/40"
                   >
-                    Очистить выбор
+                    {allSelected ? "Снять выделение" : "Выбрать все"}
                   </button>
-                )}
-              </div>
+
+                  {selectedIds.size > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedIds(new Set())}
+                      className="text-sm text-zinc-500 underline underline-offset-4 hover:text-zinc-700 dark:hover:text-zinc-300"
+                    >
+                      Очистить выбор
+                    </button>
+                  )}
+                </div>
+              )}
 
               <ul className={`grid gap-3 ${selectionMode ? "pb-28" : ""}`}>
                 {templates.map((template) => (
@@ -395,8 +408,14 @@ export const TemplatesPage = ({
                     onToggle={() => toggle(template.id)}
                     onDelete={() => openDeleteConfirm(template)}
                     onPublish={() => publishMutation.mutate(template)}
-                    isDeleting={pendingDelete === template.id}
-                    isPublishing={pendingPublish === template.id}
+                    isDeleting={
+                      deleteMutation.isPending &&
+                      deleteMutation.variables?.id === template.id
+                    }
+                    isPublishing={
+                      publishMutation.isPending &&
+                      publishMutation.variables?.id === template.id
+                    }
                   />
                 ))}
               </ul>

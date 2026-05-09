@@ -1,17 +1,14 @@
-import React from "react";
+import { memo } from "react";
 import type { CommonBlockProps } from "../../types";
-import { cx } from "../../utils/styles";
+import { cx, modeBadgeClasses, modeLabel } from "../../utils/styles";
 import { AutoResizeTextarea } from "../common/AutoResizeTextarea";
 import { effectiveDisplayMode } from "../../utils/visibility";
-import { modeBadgeClasses, modeLabel } from "../../utils/styles";
 
-export function HeaderBlock({
+export const HeaderBlock = memo(function HeaderBlock({
   element,
   updateElement,
   isReadOnly,
   filterMode,
-  inContainer,
-  insideQuestion,
 }: CommonBlockProps) {
   const level = element.level ?? 1;
   const size =
@@ -24,8 +21,7 @@ export function HeaderBlock({
   const mode = effectiveDisplayMode(element);
   const priorityText =
     mode === "always" ? "Ключевое" : mode === "prefer" ? "Важное" : null;
-  const showPriorityPill =
-    filterMode === "all" && priorityText && !inContainer && !insideQuestion;
+  const showPriorityPill = filterMode === "all" && priorityText;
 
   return (
     <div className="py-2">
@@ -50,9 +46,9 @@ export function HeaderBlock({
             "placeholder:text-zinc-300 dark:placeholder:text-zinc-700",
             size,
           )}
-          placeholder={`Заголовок (уровень ${level})…`}
+          placeholder={`Заголовок (уровень ${level})...`}
         />
       </div>
     </div>
   );
-}
+});

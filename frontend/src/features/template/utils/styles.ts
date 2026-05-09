@@ -1,11 +1,11 @@
-import type { DisplayMode, ElementType } from "@/model/templateElement";
+import type { DisplayMode, ElementType } from "../../../model/templateElement";
 
 export const cx = (...classes: Array<string | false | null | undefined>) =>
   classes.filter(Boolean).join(" ");
 
 export const modeBadgeClasses = (mode: DisplayMode | null) => {
   if (mode === "always")
-    return "border-red-200 bg-red-50 text-red-700 dark:border-red-900/60 dark:bg-red-900/20 dark:text-red-200";
+    return "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800/60 dark:bg-amber-900/20 dark:text-amber-200";
   if (mode === "prefer")
     return "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900/60 dark:bg-blue-900/20 dark:text-blue-200";
   return "border-zinc-200 bg-zinc-50 text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900/30 dark:text-zinc-200";

@@ -12,6 +12,9 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as TemplateTemplateIdRouteImport } from './routes/template/$templateId'
+import { Route as ReportReportIdRouteImport } from './routes/report/$reportId'
+import { Route as TemplateTemplateIdIndexRouteImport } from './routes/template/$templateId/index'
+import { Route as TemplateTemplateIdReportsRouteImport } from './routes/template/$templateId/reports'
 
 const PrivacyRoute = PrivacyRouteImport.update({
   id: '/privacy',
@@ -28,35 +31,78 @@ const TemplateTemplateIdRoute = TemplateTemplateIdRouteImport.update({
   path: '/template/$templateId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ReportReportIdRoute = ReportReportIdRouteImport.update({
+  id: '/report/$reportId',
+  path: '/report/$reportId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TemplateTemplateIdIndexRoute = TemplateTemplateIdIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => TemplateTemplateIdRoute,
+} as any)
+const TemplateTemplateIdReportsRoute =
+  TemplateTemplateIdReportsRouteImport.update({
+    id: '/reports',
+    path: '/reports',
+    getParentRoute: () => TemplateTemplateIdRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/privacy': typeof PrivacyRoute
-  '/template/$templateId': typeof TemplateTemplateIdRoute
+  '/report/$reportId': typeof ReportReportIdRoute
+  '/template/$templateId': typeof TemplateTemplateIdRouteWithChildren
+  '/template/$templateId/reports': typeof TemplateTemplateIdReportsRoute
+  '/template/$templateId/': typeof TemplateTemplateIdIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/privacy': typeof PrivacyRoute
-  '/template/$templateId': typeof TemplateTemplateIdRoute
+  '/report/$reportId': typeof ReportReportIdRoute
+  '/template/$templateId/reports': typeof TemplateTemplateIdReportsRoute
+  '/template/$templateId': typeof TemplateTemplateIdIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/privacy': typeof PrivacyRoute
-  '/template/$templateId': typeof TemplateTemplateIdRoute
+  '/report/$reportId': typeof ReportReportIdRoute
+  '/template/$templateId': typeof TemplateTemplateIdRouteWithChildren
+  '/template/$templateId/reports': typeof TemplateTemplateIdReportsRoute
+  '/template/$templateId/': typeof TemplateTemplateIdIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/privacy' | '/template/$templateId'
+  fullPaths:
+    | '/'
+    | '/privacy'
+    | '/report/$reportId'
+    | '/template/$templateId'
+    | '/template/$templateId/reports'
+    | '/template/$templateId/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/privacy' | '/template/$templateId'
-  id: '__root__' | '/' | '/privacy' | '/template/$templateId'
+  to:
+    | '/'
+    | '/privacy'
+    | '/report/$reportId'
+    | '/template/$templateId/reports'
+    | '/template/$templateId'
+  id:
+    | '__root__'
+    | '/'
+    | '/privacy'
+    | '/report/$reportId'
+    | '/template/$templateId'
+    | '/template/$templateId/reports'
+    | '/template/$templateId/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   PrivacyRoute: typeof PrivacyRoute
-  TemplateTemplateIdRoute: typeof TemplateTemplateIdRoute
+  ReportReportIdRoute: typeof ReportReportIdRoute
+  TemplateTemplateIdRoute: typeof TemplateTemplateIdRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
@@ -82,13 +128,48 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TemplateTemplateIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/report/$reportId': {
+      id: '/report/$reportId'
+      path: '/report/$reportId'
+      fullPath: '/report/$reportId'
+      preLoaderRoute: typeof ReportReportIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/template/$templateId/': {
+      id: '/template/$templateId/'
+      path: '/'
+      fullPath: '/template/$templateId/'
+      preLoaderRoute: typeof TemplateTemplateIdIndexRouteImport
+      parentRoute: typeof TemplateTemplateIdRoute
+    }
+    '/template/$templateId/reports': {
+      id: '/template/$templateId/reports'
+      path: '/reports'
+      fullPath: '/template/$templateId/reports'
+      preLoaderRoute: typeof TemplateTemplateIdReportsRouteImport
+      parentRoute: typeof TemplateTemplateIdRoute
+    }
   }
 }
+
+interface TemplateTemplateIdRouteChildren {
+  TemplateTemplateIdReportsRoute: typeof TemplateTemplateIdReportsRoute
+  TemplateTemplateIdIndexRoute: typeof TemplateTemplateIdIndexRoute
+}
+
+const TemplateTemplateIdRouteChildren: TemplateTemplateIdRouteChildren = {
+  TemplateTemplateIdReportsRoute: TemplateTemplateIdReportsRoute,
+  TemplateTemplateIdIndexRoute: TemplateTemplateIdIndexRoute,
+}
+
+const TemplateTemplateIdRouteWithChildren =
+  TemplateTemplateIdRoute._addFileChildren(TemplateTemplateIdRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   PrivacyRoute: PrivacyRoute,
-  TemplateTemplateIdRoute: TemplateTemplateIdRoute,
+  ReportReportIdRoute: ReportReportIdRoute,
+  TemplateTemplateIdRoute: TemplateTemplateIdRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -9,12 +9,35 @@ export class ApiError extends Error {
   }
 }
 
+const API_PREFIX = "/api/";
+const API_BASE = `${API_PREFIX}v1`;
+
 let refreshPromise: Promise<void> | null = null;
 
-async function refreshToken(): Promise<void> {
-  const res = await fetch("/api/v1/lti/jwt-refresh", {
+type ErrorBody = {
+  error_type?: string;
+  detail?: string;
+  [key: string]: unknown;
+};
+
+function resolveUrl(url: string): string {
+  if (url.startsWith("http://") || url.startsWith("https://")) {
+    return url;
+  }
+  if (url.startsWith(API_PREFIX)) {
+    return url;
+  }
+  if (url.startsWith("/")) {
+    return `${API_BASE}${url}`;
+  }
+  return `${API_BASE}/${url}`;
+}
+
+async function refreshToken(signal?: AbortSignal): Promise<void> {
+  const res = await fetch(resolveUrl("/lti/jwt-refresh"), {
     method: "POST",
     credentials: "include",
+    signal,
   });
 
   if (!res.ok) {
@@ -22,12 +45,12 @@ async function refreshToken(): Promise<void> {
   }
 }
 
-function isJwtError(body: unknown): boolean {
+export function isJwtError(body: unknown): body is ErrorBody {
   return (
     typeof body === "object" &&
     body !== null &&
     "error_type" in body &&
-    body.error_type === "JWTDecodeError"
+    (body as ErrorBody).error_type === "JWTDecodeError"
   );
 }
 
@@ -36,8 +59,10 @@ export async function apiFetch<T>(
   options: RequestInit = {},
   retry = true,
 ): Promise<T> {
+  const targetUrl = resolveUrl(url);
   const isFormData = options.body instanceof FormData;
-  const res = await fetch(url, {
+
+  const res = await fetch(targetUrl, {
     ...options,
     credentials: "include",
     headers: isFormData
@@ -48,22 +73,49 @@ export async function apiFetch<T>(
         },
   });
 
-  const body = res.status !== 204 ? await res.json().catch(() => null) : null;
+  const body: unknown =
+    res.status !== 204 ? await res.json().catch(() => null) : null;
 
   if (!res.ok) {
     if (res.status === 401 && isJwtError(body) && retry) {
       if (!refreshPromise) {
-        refreshPromise = refreshToken().finally(() => {
-          refreshPromise = null;
-        });
+        refreshPromise = refreshToken(options.signal ?? undefined)
+          .catch(() => {})
+          .finally(() => {
+            refreshPromise = null;
+          });
       }
       await refreshPromise;
       return apiFetch<T>(url, options, false);
     }
 
-    throw new ApiError(res.status, res.statusText, body);
+    const message =
+      (typeof body === "object" &&
+        body !== null &&
+        "detail" in body &&
+        typeof (body as ErrorBody).detail === "string" &&
+        (body as ErrorBody).detail) ||
+      res.statusText ||
+      "Request failed";
+
+    throw new ApiError(res.status, message, body);
   }
 
-  if (res.status === 204) return {} as T;
+  if (res.status === 204) {
+    return undefined as T;
+  }
+
   return body as T;
+}
+
+export function isApiError(error: unknown): error is ApiError {
+  return error instanceof ApiError;
+}
+
+export function isUnauthorized(error: unknown): boolean {
+  return isApiError(error) && error.status === 401;
+}
+
+export function isForbidden(error: unknown): boolean {
+  return isApiError(error) && error.status === 403;
 }

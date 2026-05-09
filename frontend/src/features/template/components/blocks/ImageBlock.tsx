@@ -1,8 +1,8 @@
-import React from "react";
+import { memo } from "react";
 import type { CommonBlockProps } from "../../types";
 import { cx } from "../../utils/styles";
 
-export function ImageBlock({
+export const ImageBlock = memo(function ImageBlock({
   element,
   updateElement,
   isReadOnly,
@@ -12,19 +12,12 @@ export function ImageBlock({
 
   return (
     <div
-      className={cx(
-        "my-6 rounded-xl border border-zinc-200 bg-zinc-50 p-5",
-        "dark:border-zinc-800 dark:bg-zinc-900/40",
-      )}
+      className={cx("my-6 rounded-xl bg-zinc-50 p-5", "dark:bg-zinc-900/30")}
     >
-      <div className="mb-3 text-sm text-zinc-500 text-center font-medium">
-        Изображение
-      </div>
-
       <div
         className={cx(
-          "overflow-hidden rounded-xl border border-zinc-200 bg-white",
-          "dark:border-zinc-800 dark:bg-[#141416]",
+          "overflow-hidden rounded-xl bg-white",
+          "dark:bg-[#141416]",
           "flex items-center justify-center min-h-[180px]",
         )}
       >
@@ -55,11 +48,11 @@ export function ImageBlock({
           aria-label="Описание изображения"
           className={cx(
             "mt-4 w-full rounded-xl px-4 py-3 text-sm outline-none text-center",
-            "bg-white border border-zinc-200 text-zinc-700",
+            "bg-white border-b border-zinc-200 text-zinc-700",
             "dark:bg-[#141416] dark:border-zinc-700 dark:text-zinc-200",
             "focus:ring-2 focus:ring-blue-500/20",
           )}
-          placeholder="Описание изображения (alt)…"
+          placeholder="Описание изображения (alt)..."
         />
       )}
 
@@ -70,4 +63,4 @@ export function ImageBlock({
       )}
     </div>
   );
-}
+});

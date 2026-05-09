@@ -1,4 +1,4 @@
-import type { TemplateElementResponse } from "@/model/templateElement";
+import type { TemplateElementResponse } from "../../../model/templateElement";
 import type { GlobalScoring } from "../types";
 import { normalizeWeight } from "./validation";
 
@@ -16,35 +16,63 @@ export function calculateGlobalScoring(
 ): GlobalScoring {
   const answers: Array<{ id: string; weight: number }> = [];
 
-  const walk = (nodes: TemplateElementResponse[]) => {
+  const walk = (
+    nodes: TemplateElementResponse[],
+    inheritedQuestionWeight: number | null = null,
+  ) => {
     for (const node of nodes) {
+      const nextInheritedQuestionWeight =
+        node.type === "question"
+          ? normalizeWeight(node.maxScore)
+          : inheritedQuestionWeight;
+
       if (node.type === "answer") {
-        const weight = normalizeWeight(node.maxScore);
+        const weightSource = node.maxScore ?? inheritedQuestionWeight ?? 1;
+        const weight = normalizeWeight(weightSource);
         answers.push({ id: node.id, weight });
       }
+
       if (node.children?.length) {
-        walk(node.children);
+        walk(node.children, nextInheritedQuestionWeight);
       }
     }
   };
 
   walk(elements);
 
-  let sumWeights = answers.reduce((acc, answer) => acc + answer.weight, 0);
+  if (answers.length === 0) {
+    return {
+      templateTotalPoints: totalPoints,
+      sumAnswerWeights: 0,
+      byAnswerId: {},
+    };
+  }
+
+  const sumWeights = answers.reduce((acc, a) => acc + a.weight, 0);
 
   if (sumWeights <= 0) {
-    sumWeights = Math.max(1, answers.length);
-    for (const answer of answers) {
-      answer.weight = 1;
-    }
+    return {
+      templateTotalPoints: totalPoints,
+      sumAnswerWeights: 0,
+      byAnswerId: {},
+    };
   }
 
   const byAnswerId: GlobalScoring["byAnswerId"] = {};
+  let pointsAccumulator = 0;
 
-  for (const answer of answers) {
-    const rawPoints =
-      sumWeights > 0 ? (totalPoints * answer.weight) / sumWeights : 0;
-    const points = floorTo2(rawPoints);
+  for (let i = 0; i < answers.length; i++) {
+    const answer = answers[i];
+    let points = 0;
+
+    if (i < answers.length - 1) {
+      const rawPoints = (totalPoints * answer.weight) / sumWeights;
+      points = floorTo2(rawPoints);
+      pointsAccumulator += points;
+    } else {
+      const remainingPoints = totalPoints - pointsAccumulator;
+      points = floorTo2(remainingPoints);
+    }
 
     byAnswerId[answer.id] = {
       answerId: answer.id,

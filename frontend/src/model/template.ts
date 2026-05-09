@@ -1,33 +1,45 @@
+import type { HalLink } from "../model/common";
 import type {
   TemplateElementResponse,
   TemplatePatchRequest,
 } from "./templateElement";
+import type { MinimalReport } from "./report";
 
-export interface HalLink {
-  href: string;
-  method?: string;
-}
-
-export interface CollectionHalLinks {
+export interface TemplateCollectionLinks {
   self?: HalLink;
   add_template?: HalLink;
+  publish_many?: HalLink;
+  delete_many?: HalLink;
 }
 
-export interface TemplateHalLinks {
+export interface TemplateSummaryLinks {
+  self?: HalLink;
+  get_template?: HalLink;
+  delete?: HalLink;
+  publish?: HalLink;
+  get_reports?: HalLink;
+  create_report?: HalLink;
+}
+
+export interface TemplateDetailLinks {
   self?: HalLink;
   update?: HalLink;
   publish?: HalLink;
   delete?: HalLink;
-  get_template?: HalLink;
-  publish_many?: HalLink;
-  delete_many?: HalLink;
   upload_image?: HalLink;
   all?: HalLink;
+  get_reports?: HalLink;
+  create_report?: HalLink;
+}
+
+export interface TemplateCreationLinks {
+  self?: HalLink;
+  get_template?: HalLink;
 }
 
 export interface TemplateCreationResponse {
   id: string;
-  _links: TemplateHalLinks;
+  _links: TemplateCreationLinks;
 }
 
 export interface TemplateDetailResponse {
@@ -38,14 +50,17 @@ export interface TemplateDetailResponse {
   _embedded: {
     elements: TemplateElementResponse[];
   };
-  _links: TemplateHalLinks;
+  _links: TemplateDetailLinks;
 }
 
 export interface TemplateCourseSummary {
   id: string;
   name: string;
   isDraft: boolean;
-  _links: TemplateHalLinks;
+  _embedded: {
+    reports: MinimalReport[];
+  };
+  _links: TemplateSummaryLinks;
 }
 
 export interface TemplateCourseCollection {
@@ -53,7 +68,7 @@ export interface TemplateCourseCollection {
   _embedded: {
     templates: TemplateCourseSummary[];
   };
-  _links: CollectionHalLinks;
+  _links: TemplateCollectionLinks;
 }
 
 export interface TemplateUpdateRequest {
@@ -62,6 +77,13 @@ export interface TemplateUpdateRequest {
   elements?: TemplatePatchRequest;
 }
 
+export interface TemplateManyRequest {
+  ids: string[];
+}
+
 export type ImageUploadResponse = {
   mediaKey: string;
+  imageUrl?: string | null;
+  url?: string | null;
+  key?: string | null;
 };

@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { TemplateElementResponse } from "@/model/templateElement";
+import type { TemplateElementResponse } from "../../../model/templateElement";
 import type { GlobalScoring } from "../types";
 import { calculateGlobalScoring } from "../utils/scoring";
 

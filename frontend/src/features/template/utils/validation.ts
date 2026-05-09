@@ -1,6 +1,9 @@
-import type { DisplayMode } from "@/model/templateElement";
+import type { DisplayMode } from "../../../model/templateElement";
 
 export function safeNumber(value: unknown, fallback = 0): number {
+  if (value === null || value === undefined) return fallback;
+  if (typeof value === "string" && value.trim() === "") return fallback;
+
   const num = Number(value);
   return Number.isFinite(num) ? num : fallback;
 }

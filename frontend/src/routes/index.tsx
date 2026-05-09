@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { TemplatesPage } from "../pages/Templates";
-import { templateApi, queryKeys } from "@/api/template";
+import { templateApi, queryKeys } from "../api/template";
 
 export const Route = createFileRoute("/")({
   loader: ({ context: { queryClient } }) =>
