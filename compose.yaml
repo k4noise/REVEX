@@ -1,25 +1,20 @@
+version: "3.9"
+
 volumes:
-  images:
   redis_data:
 
 services:
-  frontend:
-    build:
-      context: ./frontend
-    networks:
-      - revex
-
   backend:
     build:
-      context: .
-      dockerfile: Dockerfile.backend
+      context: ./backend
     env_file:
-      - .env
+      - ${BACKEND_ENV_FILE:-./.env}
     volumes:
-      - ./logs:/app/logs
-      - ./config/keys:/app/config/keys:ro
-      - ./config/lti_config.json:/app/config/lti_config.json:ro
-      - images:/app/images
+      - ${LOG_DIR:-./logs}:/app/logs
+      - ${KEYS_DIR:-./config/keys}:/app/config/keys:ro
+      - ${LTI_CONFIG_PATH:-./lti_config.json}:/app/config/lti_config.json:ro
+      - ${IMAGES_DIR:-./images}:/app/images
+      - ./assets:/assets:ro
     depends_on:
       - redis
     restart: unless-stopped
@@ -28,13 +23,13 @@ services:
 
   nginx:
     build:
-      context: ./nginx
+      context: .
+      dockerfile: nginx/Dockerfile
     ports:
-      - "3162:80"
+      - "${PORT:-3162}:80"
     volumes:
-      - images:/usr/share/nginx/static/images
+      - ${IMAGES_DIR:-./images}:/usr/share/nginx/static/images
     depends_on:
-      - frontend
       - backend
     restart: unless-stopped
     networks:
@@ -53,16 +48,16 @@ services:
 
   worker:
     build:
-      context: .
-      dockerfile: Dockerfile.backend
-    command: uv run rq worker --url ${REDIS_URL:-redis://redis:6379/0} pregrading
+      context: ./backend
+    command: uv run rq worker --url redis://redis:6379/0 pregrading
     env_file:
-      - .env
+      - ${BACKEND_ENV_FILE:-./.env}
     volumes:
-      - ./logs:/app/logs
-      - ./config/keys:/app/config/keys:ro
-      - ./config/lti_config.json:/app/config/lti_config.json:ro
-      - images:/app/images
+      - ${LOG_DIR:-./logs}:/app/logs
+      - ${KEYS_DIR:-./config/keys}:/app/config/keys:ro
+      - ${LTI_CONFIG_PATH:-./lti_config.json}:/app/config/lti_config.json:ro
+      - ${IMAGES_DIR:-./images}:/app/images
+      - ./assets:/assets:ro
     depends_on:
       - redis
     restart: unless-stopped
@@ -70,5 +65,5 @@ services:
       - revex
 
 networks:
-    revex:
-      driver: bridge
+  revex:
+    driver: bridge

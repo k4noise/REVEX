@@ -1,248 +1,316 @@
 .DEFAULT_GOAL := help
+SHELL := /usr/bin/env bash
 
-DC ?= docker compose
-COMPOSE_FILE ?= docker-compose.yml
-KEYS_DIR ?= config/keys
-PORT ?= 3162
+DC            ?= docker-compose
+COMPOSE_FILE  ?= compose.yaml
 
-.PHONY: help prepare init-dirs init-config init-env gen-keys \
-        build rebuild up up-with-redis down restart ps logs backend-logs worker-logs nginx-logs redis-logs \
-        migrate shell-backend shell-worker check-port doctor redis-check
+KEYS_DIR         ?= ./config/keys
+LOG_DIR          ?= ./logs
+IMAGES_DIR       ?= ./images
+LTI_CONFIG_PATH  ?= ./lti_config.json
+BACKEND_ENV_FILE ?= ./.env
+PORT             ?= 3162
+
+-include .makerc
+
+export KEYS_DIR LOG_DIR IMAGES_DIR LTI_CONFIG_PATH BACKEND_ENV_FILE PORT
+
+DC_RUN := $(DC) -f $(COMPOSE_FILE)
+
+.PHONY: help setup reconfigure clean-setup \
+        build rebuild up down restart ps \
+        logs backend-logs worker-logs nginx-logs redis-logs \
+        migrate shell-backend shell-worker \
+        check-port doctor
 
 help:
-	@echo "Доступные команды:"
-	@echo "  make prepare             - подготовить проект (.env, config, ключи, директории)"
-	@echo "  make build               - собрать все образы"
-	@echo "  make rebuild             - пересобрать образы без кеша"
-	@echo "  make up                  - поднять сервисы без локального redis"
-	@echo "  make up-with-redis       - поднять сервисы со встроенным redis-контейнером"
-	@echo "  make down                - остановить и удалить контейнеры"
-	@echo "  make restart             - перезапустить backend и worker"
-	@echo "  make ps                  - показать состояние контейнеров"
-	@echo "  make logs                - показать логи всех сервисов"
-	@echo "  make backend-logs        - показать логи backend"
-	@echo "  make worker-logs         - показать логи worker"
-	@echo "  make nginx-logs          - показать логи nginx"
-	@echo "  make redis-logs          - показать логи redis"
-	@echo "  make migrate             - выполнить alembic upgrade head внутри backend"
-	@echo "  make shell-backend       - открыть shell внутри backend-контейнера"
-	@echo "  make shell-worker        - открыть shell внутри worker-контейнера"
-	@echo "  make check-port          - проверить, свободен ли порт $(PORT) на хосте"
-	@echo "  make redis-check         - проверить доступность redis/valkey на хосте"
-	@echo "  make doctor              - выполнить базовую проверку конфигурации"
+	@echo "Команды:"
+	@echo "  make setup            интерактивная настройка"
+	@echo "  make reconfigure      запустить setup заново"
+	@echo "  make clean-setup      удалить .makerc"
 	@echo ""
-	@echo "Параметры:"
-	@echo "  KEYS_DIR=<path>          - путь к директории ключей (по умолчанию: config/keys)"
-	@echo "  PORT=<number>            - внешний порт nginx (по умолчанию: 3162)"
-	@echo "  COMPOSE_FILE=<file>      - путь к compose-файлу (по умолчанию: docker-compose.yml)"
-
-init-dirs:
-	@mkdir -p logs
-	@mkdir -p $(KEYS_DIR)
-
-init-config:
-	@if [ ! -f config/lti_config.json ]; then \
-		if [ -f config/lti_config.json.example ]; then \
-			cp config/lti_config.json.example config/lti_config.json; \
-			echo "Создан config/lti_config.json из config/lti_config.json.example"; \
-		else \
-			echo "Внимание: config/lti_config.json.example не найден. Создайте config/lti_config.json вручную."; \
-		fi \
-	else \
-		echo "config/lti_config.json уже существует."; \
-	fi
-
-init-env:
-	@if [ ! -f .env ]; then \
-		if [ -f .env.example ]; then \
-			cp .env.example .env; \
-			echo "Создан .env из .env.example. Проверьте и отредактируйте переменные."; \
-		else \
-			echo "Внимание: .env.example не найден. Создайте .env вручную."; \
-		fi \
-	else \
-		echo ".env уже существует."; \
-	fi
-
-gen-keys:
-	@echo "Проверяю JWT ключи в $(KEYS_DIR)..."
-	@if [ ! -f "$(KEYS_DIR)/jwtRS256.key" ]; then \
-		ssh-keygen -t rsa -b 4096 -m PEM -f "$(KEYS_DIR)/jwtRS256.key" -N "" >/dev/null 2>&1 && \
-		echo "Создан приватный ключ: $(KEYS_DIR)/jwtRS256.key"; \
-	else \
-		echo "Приватный ключ уже существует: $(KEYS_DIR)/jwtRS256.key"; \
-	fi
-	@if [ ! -f "$(KEYS_DIR)/jwtRS256.key.pub" ]; then \
-		openssl rsa -in "$(KEYS_DIR)/jwtRS256.key" -pubout -outform PEM -out "$(KEYS_DIR)/jwtRS256.key.pub" >/dev/null 2>&1 && \
-		echo "Создан публичный ключ: $(KEYS_DIR)/jwtRS256.key.pub"; \
-	else \
-		echo "Публичный ключ уже существует: $(KEYS_DIR)/jwtRS256.key.pub"; \
-	fi
-
-prepare: init-dirs init-config init-env gen-keys
+	@echo "  make build            собрать образы"
+	@echo "  make rebuild          собрать без кеша"
+	@echo "  make up               поднять сервисы"
+	@echo "  make down             остановить"
+	@echo "  make restart          перезапустить backend и worker"
+	@echo "  make ps               статус"
 	@echo ""
-	@echo "Подготовка завершена."
-	@echo "Проверьте .env, особенно:"
-	@echo "  JWT_SECRET_KEY"
-	@echo "  DATABASE_URL"
-	@echo "  REDIS_URL"
-	@echo "  FRONTEND_URL"
-	@echo "  PUBLIC_BACKEND_URL"
-	@echo "  LLM_BASE_URL / LLM_API_KEY / LLM_MODEL"
+	@echo "  make logs | backend-logs | worker-logs | nginx-logs | redis-logs"
+	@echo "  make migrate          alembic upgrade head"
+	@echo "  make shell-backend | shell-worker"
 	@echo ""
-	@echo "Варианты REDIS_URL:"
-	@echo "  Хостовый Redis/Valkey: REDIS_URL=redis://host.docker.internal:6379/0"
-	@echo "  Контейнерный Redis:    REDIS_URL=redis://redis:6379/0"
+	@echo "  make check-port       проверить порт $(PORT)"
+	@echo "  make doctor           проверить окружение"
 	@echo ""
-	@echo "Если нужен встроенный redis-контейнер — запускайте make up-with-redis"
+	@echo "Текущая конфигурация:"
+	@echo "  KEYS_DIR         = $(KEYS_DIR)"
+	@echo "  LOG_DIR          = $(LOG_DIR)"
+	@echo "  IMAGES_DIR       = $(IMAGES_DIR)"
+	@echo "  LTI_CONFIG_PATH  = $(LTI_CONFIG_PATH)"
+	@echo "  BACKEND_ENV_FILE = $(BACKEND_ENV_FILE)"
+	@echo "  PORT             = $(PORT)"
 
-build:
-	$(DC) -f $(COMPOSE_FILE) build
 
-rebuild:
-	$(DC) -f $(COMPOSE_FILE) build --no-cache
+define SETUP_SCRIPT
+set -euo pipefail
 
-up:
-	$(DC) -f $(COMPOSE_FILE) up -d
+ask() {
+  local var="$$1" prompt="$$2" def="$$3" ans
+  if [ -n "$$def" ]; then
+    read -e -r -p "$$prompt [$$def]: " ans || true
+    ans="$${ans:-$$def}"
+  else
+    read -e -r -p "$$prompt: " ans || true
+  fi
+  printf -v "$$var" '%s' "$$ans"
+}
 
-up-with-redis:
-	$(DC) -f $(COMPOSE_FILE) --profile local-redis up -d
+ask_yn() {
+  local var="$$1" prompt="$$2" def="$$3" ans
+  while true; do
+    read -r -p "$$prompt [$$def]: " ans || true
+    ans="$${ans:-$$def}"
+    case "$$ans" in
+      y|Y|yes) printf -v "$$var" 'y'; return;;
+      n|N|no)  printf -v "$$var" 'n'; return;;
+      *) echo "Введите y или n.";;
+    esac
+  done
+}
 
-down:
-	$(DC) -f $(COMPOSE_FILE) down
+pick_editor() {
+  if [ -n "$${EDITOR:-}" ] && command -v "$${EDITOR%% *}" >/dev/null 2>&1; then
+    echo "$$EDITOR"; return
+  fi
+  if [ -n "$${VISUAL:-}" ] && command -v "$${VISUAL%% *}" >/dev/null 2>&1; then
+    echo "$$VISUAL"; return
+  fi
+  for e in nano micro vim vi nvim code; do
+    if command -v "$$e" >/dev/null 2>&1; then
+      [ "$$e" = "code" ] && echo "code --wait" || echo "$$e"
+      return
+    fi
+  done
+  echo ""
+}
 
-restart:
-	$(DC) -f $(COMPOSE_FILE) restart backend worker
+edit_file() {
+  local file="$$1" ed
+  ed="$$(pick_editor)"
+  if [ -z "$$ed" ]; then
+    echo "Редактор не найден. Отредактируйте $$file и нажмите Enter."
+    read -r _ || true
+    return
+  fi
+  echo "Открываю $$file в $$ed. Закройте редактор для продолжения."
+  $$ed "$$file"
+}
 
-ps:
-	$(DC) -f $(COMPOSE_FILE) ps
+copy_example() {
+  local src="$$1" dst="$$2"
+  if [ -f "$$dst" ] && [ -f "$$src" ]; then
+    local ow
+    while true; do
+      read -r -p "$$dst уже существует. Перезаписать из $$src? [n]: " ow || true
+      ow="$${ow:-n}"
+      case "$$ow" in
+        y|Y|yes) cp -f "$$src" "$$dst"; echo "$$dst перезаписан из $$src."; return;;
+        n|N|no)  echo "Оставляю существующий $$dst."; return;;
+        *) echo "Введите y или n.";;
+      esac
+    done
+  elif [ -f "$$src" ]; then
+    mkdir -p "$$(dirname "$$dst")"
+    cp "$$src" "$$dst"
+    echo "$$src скопирован в $$dst."
+  elif [ -f "$$dst" ]; then
+    echo "$$dst уже существует, $$src отсутствует — пропускаю."
+  else
+    echo "Внимание: ни $$src, ни $$dst не найдены."
+    return 1
+  fi
+}
 
-logs:
-	$(DC) -f $(COMPOSE_FILE) logs -f
+check_env_vars() {
+  local file="$$1"; shift
+  local missing=()
+  for v in "$$@"; do
+    grep -qE "^$$v=.+" "$$file" || missing+=("$$v")
+  done
+  if [ $${#missing[@]} -eq 0 ]; then
+    echo "OK: все обязательные переменные заполнены."
+    return 0
+  fi
+  echo "Не заполнены: $${missing[*]}"
+  return 1
+}
 
-backend-logs:
-	$(DC) -f $(COMPOSE_FILE) logs -f backend
 
-worker-logs:
-	$(DC) -f $(COMPOSE_FILE) logs -f worker
+echo "[1/6] Каталог логов"
+ask LOG_DIR "Куда складывать логи" "$(LOG_DIR)"
+mkdir -p "$$LOG_DIR"
+echo "Создан $$LOG_DIR"
+echo
 
-nginx-logs:
-	$(DC) -f $(COMPOSE_FILE) logs -f nginx
+echo "[2/6] Каталог изображений"
+ask IMAGES_DIR "Куда складывать изображения" "$(IMAGES_DIR)"
+mkdir -p "$$IMAGES_DIR"
+echo "Создан $$IMAGES_DIR"
+echo
 
-redis-logs:
-	$(DC) -f $(COMPOSE_FILE) logs -f redis
+echo "[3/6] Каталог JWT-ключей"
+ask KEYS_DIR "Куда положить JWT-ключи" "$(KEYS_DIR)"
+mkdir -p "$$KEYS_DIR"
+if [ ! -f "$$KEYS_DIR/jwtRS256.key" ]; then
+  ssh-keygen -t rsa -b 4096 -m PEM -f "$$KEYS_DIR/jwtRS256.key" -N "" >/dev/null 2>&1
+  echo "Создан $$KEYS_DIR/jwtRS256.key"
+else
+  echo "Приватный ключ уже существует."
+fi
+if [ ! -f "$$KEYS_DIR/jwtRS256.key.pub" ]; then
+  openssl rsa -in "$$KEYS_DIR/jwtRS256.key" -pubout -outform PEM \
+    -out "$$KEYS_DIR/jwtRS256.key.pub" >/dev/null 2>&1
+  echo "Создан $$KEYS_DIR/jwtRS256.key.pub"
+else
+  echo "Публичный ключ уже существует."
+fi
+echo
 
-migrate:
-	$(DC) -f $(COMPOSE_FILE) exec -T backend uv run alembic upgrade head
+echo "[4/6] .env"
+ask BACKEND_ENV_FILE "Куда положить .env" "$(BACKEND_ENV_FILE)"
+copy_example backend/.env.example "$$BACKEND_ENV_FILE" || true
 
-shell-backend:
-	$(DC) -f $(COMPOSE_FILE) exec backend sh
+[ -f "$$BACKEND_ENV_FILE" ] || { mkdir -p "$$(dirname "$$BACKEND_ENV_FILE")"; : > "$$BACKEND_ENV_FILE"; }
 
-shell-worker:
-	$(DC) -f $(COMPOSE_FILE) exec worker sh
+if ! grep -qE '^JWT_SECRET_KEY=.+' "$$BACKEND_ENV_FILE"; then
+  SECRET="$$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | xxd -p -c 64)"
+  if grep -q '^JWT_SECRET_KEY=' "$$BACKEND_ENV_FILE"; then
+    sed -i.bak "s|^JWT_SECRET_KEY=.*|JWT_SECRET_KEY=$$SECRET|" "$$BACKEND_ENV_FILE" && rm -f "$$BACKEND_ENV_FILE.bak"
+  else
+    echo "JWT_SECRET_KEY=$$SECRET" >> "$$BACKEND_ENV_FILE"
+  fi
+  echo "JWT_SECRET_KEY сгенерирован."
+fi
+
+if grep -q '^REDIS_URL=' "$$BACKEND_ENV_FILE"; then
+  sed -i.bak "s|^REDIS_URL=.*|REDIS_URL=redis://redis:6379/0|" "$$BACKEND_ENV_FILE" && rm -f "$$BACKEND_ENV_FILE.bak"
+else
+  echo "REDIS_URL=redis://redis:6379/0" >> "$$BACKEND_ENV_FILE"
+fi
+echo "REDIS_URL=redis://redis:6379/0 записан."
+
+ask_yn EDIT_ENV "Открыть $$BACKEND_ENV_FILE в редакторе?" "y"
+[ "$$EDIT_ENV" = "y" ] && edit_file "$$BACKEND_ENV_FILE"
+
+REQUIRED=(JWT_SECRET_KEY DATABASE_URL REDIS_URL FRONTEND_URL PUBLIC_BACKEND_URL LLM_BASE_URL LLM_API_KEY LLM_MODEL)
+while ! check_env_vars "$$BACKEND_ENV_FILE" "$${REQUIRED[@]}"; do
+  ask_yn REOPEN "Открыть ещё раз?" "y"
+  if [ "$$REOPEN" = "y" ]; then
+    edit_file "$$BACKEND_ENV_FILE"
+  else
+    break
+  fi
+done
+echo
+
+echo "[5/6] LTI config"
+ask LTI_CONFIG_PATH "Куда положить lti_config.json" "$(LTI_CONFIG_PATH)"
+copy_example backend/config/lti_config.json.example "$$LTI_CONFIG_PATH" || {
+  mkdir -p "$$(dirname "$$LTI_CONFIG_PATH")"
+  echo '{}' > "$$LTI_CONFIG_PATH"
+  echo "Создан пустой $$LTI_CONFIG_PATH."
+}
+
+ask_yn EDIT_LTI "Открыть $$LTI_CONFIG_PATH в редакторе?" "y"
+if [ "$$EDIT_LTI" = "y" ]; then
+  while true; do
+    edit_file "$$LTI_CONFIG_PATH"
+    if command -v python3 >/dev/null 2>&1; then
+      if python3 -c "import json; json.load(open('$$LTI_CONFIG_PATH'))" 2>/dev/null; then
+        echo "JSON валиден."
+        break
+      else
+        echo "Внимание: невалидный JSON."
+        ask_yn REOPEN_LTI "Открыть ещё раз?" "y"
+        [ "$$REOPEN_LTI" = "y" ] || break
+      fi
+    else
+      break
+    fi
+  done
+fi
+echo
+
+echo "[6/6] Порт"
+ask PORT "Внешний порт nginx" "$(PORT)"
+echo
+
+cat > .makerc <<EOF
+KEYS_DIR         := $$KEYS_DIR
+LOG_DIR          := $$LOG_DIR
+IMAGES_DIR       := $$IMAGES_DIR
+LTI_CONFIG_PATH  := $$LTI_CONFIG_PATH
+BACKEND_ENV_FILE := $$BACKEND_ENV_FILE
+PORT             := $$PORT
+EOF
+echo ".makerc сохранён."
+echo
+echo "Готово. Дальше: make build && make up"
+endef
+export SETUP_SCRIPT
+
+setup:
+	@bash -c "$$SETUP_SCRIPT"
+
+reconfigure:
+	@rm -f .makerc
+	@$(MAKE) setup
+
+clean-setup:
+	@rm -f .makerc
+	@echo "Удалён .makerc."
+
+build:          ; $(DC_RUN) build
+rebuild:        ; $(DC_RUN) build --no-cache
+up:             ; $(DC_RUN) up -d
+down:           ; $(DC_RUN) down
+restart:        ; $(DC_RUN) restart backend worker
+ps:             ; $(DC_RUN) ps
+
+logs:           ; $(DC_RUN) logs -f
+backend-logs:   ; $(DC_RUN) logs -f backend
+worker-logs:    ; $(DC_RUN) logs -f worker
+nginx-logs:     ; $(DC_RUN) logs -f nginx
+redis-logs:     ; $(DC_RUN) logs -f redis
+
+migrate:        ; $(DC_RUN) exec -T backend uv run alembic upgrade head
+shell-backend:  ; $(DC_RUN) exec backend sh
+shell-worker:   ; $(DC_RUN) exec worker sh
 
 check-port:
-	@echo "Проверяю, свободен ли порт $(PORT) на хосте..."
 	@if command -v ss >/dev/null 2>&1; then \
-		if ss -tulpn | grep -q ":$(PORT) "; then \
-			echo "Порт $(PORT) уже занят."; \
-		else \
-			echo "Порт $(PORT) свободен."; \
-		fi \
+		ss -tulpn 2>/dev/null | grep -q ":$(PORT) " \
+			&& echo "Порт $(PORT) занят" || echo "Порт $(PORT) свободен"; \
 	elif command -v netstat >/dev/null 2>&1; then \
-		if netstat -tulpn 2>/dev/null | grep -q ":$(PORT) "; then \
-			echo "Порт $(PORT) уже занят."; \
-		else \
-			echo "Порт $(PORT) свободен."; \
-		fi \
+		netstat -tulpn 2>/dev/null | grep -q ":$(PORT) " \
+			&& echo "Порт $(PORT) занят" || echo "Порт $(PORT) свободен"; \
 	else \
-		echo "Не удалось найти ss или netstat. Проверьте порт $(PORT) вручную."; \
-	fi
-
-redis-check:
-	@echo "Проверяю доступность Redis/Valkey на host.docker.internal:6379 ..."
-	@if command -v redis-cli >/dev/null 2>&1; then \
-		if redis-cli -h 127.0.0.1 -p 6379 ping >/dev/null 2>&1; then \
-			echo "Redis/Valkey доступен на хосте: 127.0.0.1:6379"; \
-		else \
-			echo "Redis/Valkey на хосте недоступен на 127.0.0.1:6379"; \
-		fi \
-	else \
-		echo "redis-cli не найден, проверка пропущена."; \
+		echo "Не найдено ss/netstat"; \
 	fi
 
 doctor:
-	@echo "Базовая проверка окружения..."
-	@if command -v docker >/dev/null 2>&1; then \
-		echo "Docker найден."; \
-	else \
-		echo "Внимание: docker не найден."; \
+	@echo "Проверка окружения"
+	@command -v docker-compose >/dev/null 2>&1 && echo "docker-compose: OK"  || echo "docker-compose: НЕТ"
+	@docker info >/dev/null 2>&1                && echo "docker daemon: OK"  || echo "docker daemon: НЕТ"
+	@[ -d $(LOG_DIR) ]                    && echo "$(LOG_DIR): OK" || echo "$(LOG_DIR): НЕТ"
+	@[ -d $(IMAGES_DIR) ]                 && echo "$(IMAGES_DIR): OK" || echo "$(IMAGES_DIR): НЕТ"
+	@[ -f $(BACKEND_ENV_FILE) ]           && echo "$(BACKEND_ENV_FILE): OK" || echo "$(BACKEND_ENV_FILE): НЕТ"
+	@[ -f $(LTI_CONFIG_PATH) ]            && echo "$(LTI_CONFIG_PATH): OK" || echo "$(LTI_CONFIG_PATH): НЕТ"
+	@[ -f $(KEYS_DIR)/jwtRS256.key ] && [ -f $(KEYS_DIR)/jwtRS256.key.pub ] \
+		&& echo "JWT-ключи: OK" || echo "JWT-ключи: НЕТ"
+	@if [ -f $(BACKEND_ENV_FILE) ]; then \
+		for v in JWT_SECRET_KEY DATABASE_URL REDIS_URL FRONTEND_URL PUBLIC_BACKEND_URL LLM_BASE_URL LLM_API_KEY LLM_MODEL; do \
+			if grep -qE "^$$v=.+" $(BACKEND_ENV_FILE); then echo "$$v: OK"; else echo "$$v: НЕТ"; fi; \
+		done; \
 	fi
-	@if docker info >/dev/null 2>&1; then \
-		echo "Docker daemon доступен."; \
-	else \
-		echo "Внимание: Docker daemon недоступен."; \
-	fi
-	@if [ -f .env ]; then \
-		echo ".env найден."; \
-	else \
-		echo "Внимание: .env не найден."; \
-	fi
-	@if [ -f config/lti_config.json ]; then \
-		echo "config/lti_config.json найден."; \
-	else \
-		echo "Внимание: config/lti_config.json не найден."; \
-	fi
-	@if [ -f "$(KEYS_DIR)/jwtRS256.key" ] && [ -f "$(KEYS_DIR)/jwtRS256.key.pub" ]; then \
-		echo "JWT ключи найдены."; \
-	else \
-		echo "Внимание: JWT ключи не найдены в $(KEYS_DIR)."; \
-	fi
-	@if [ -f .env ]; then \
-		if grep -q '^JWT_SECRET_KEY=' .env; then \
-			echo "JWT_SECRET_KEY задан."; \
-		else \
-			echo "Внимание: JWT_SECRET_KEY не найден."; \
-		fi; \
-		if grep -q '^DATABASE_URL=' .env; then \
-			echo "DATABASE_URL задан."; \
-		else \
-			echo "Внимание: DATABASE_URL не найден."; \
-		fi; \
-		if grep -q '^REDIS_URL=' .env; then \
-			echo "REDIS_URL задан."; \
-		else \
-			echo "Внимание: REDIS_URL не найден."; \
-		fi; \
-		if grep -q '^FRONTEND_URL=' .env; then \
-			echo "FRONTEND_URL задан."; \
-		else \
-			echo "Внимание: FRONTEND_URL не найден."; \
-		fi; \
-		if grep -q '^PUBLIC_BACKEND_URL=' .env; then \
-			echo "PUBLIC_BACKEND_URL задан."; \
-		else \
-			echo "Внимание: PUBLIC_BACKEND_URL не найден."; \
-		fi; \
-		if grep -q '^LLM_BASE_URL=' .env; then \
-			echo "LLM_BASE_URL задан."; \
-		else \
-			echo "Внимание: LLM_BASE_URL не найден."; \
-		fi; \
-		if grep -q '^LLM_API_KEY=' .env; then \
-			echo "LLM_API_KEY задан."; \
-		else \
-			echo "Внимание: LLM_API_KEY не найден."; \
-		fi; \
-		if grep -q '^LLM_MODEL=' .env; then \
-			echo "LLM_MODEL задан."; \
-		else \
-			echo "Внимание: LLM_MODEL не найден."; \
-		fi; \
-	fi
-	@echo ""
-	@echo "Подсказка:"
-	@echo "  Для хостового Redis/Valkey используйте REDIS_URL=redis://host.docker.internal:6379/0"
-	@echo "  Для контейнерного Redis используйте REDIS_URL=redis://redis:6379/0 и make up-with-redis"
-	@echo "  Если LLM запущена на хосте, внутри Docker может понадобиться LLM_BASE_URL=http://host.docker.internal:11434/v1"
-	@echo "Проверка завершена."
