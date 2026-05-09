@@ -75,6 +75,7 @@ class NewAnswerData(CamelCaseModel):
     score: Optional[float] = None
     data: Optional[dict] = None
     pre_grade: Optional[dict] = None
+    comment: Optional[str] = None
 
     @staticmethod
     def from_domain(
@@ -86,6 +87,7 @@ class NewAnswerData(CamelCaseModel):
             score=answer.score if answer else None,
             data=answer.data if answer else None,
             pre_grade=answer.pre_grade if answer else None,
+            comment=answer.comment if answer else None,
         )
 
 
@@ -97,6 +99,7 @@ class UpdateAnswerDataRequest(CamelCaseModel):
 class UpdateAnswerScoresRequest(CamelCaseModel):
     id: uuid.UUID
     score: Optional[float] = 0
+    comment: Optional[str] = None
 
 
 class AnswerResponse(CamelCaseModel):
@@ -104,6 +107,7 @@ class AnswerResponse(CamelCaseModel):
     element_id: uuid.UUID
     score: Optional[float] = None
     data: Optional[dict] = None
+    comment: Optional[str] = None
 
     weight: Optional[float] = Field(default=None, exclude=True)
     reference: Optional[str] = Field(default=None, exclude=True)
@@ -143,6 +147,7 @@ class AnswerResponse(CamelCaseModel):
             element_id=answer_model.element_id,
             score=answer_model.score,
             data=answer_model.data,
+            comment=answer_model.comment,
             weight=properties.get("weight"),
             reference=element.data if element is not None else None,
             root_id=AnswerResponse.find_root(
@@ -165,6 +170,7 @@ class PreGradedAnswerResponse(AnswerResponse):
             element_id=base.element_id,
             score=base.score,
             data=base.data,
+            comment=base.comment,
             weight=base.weight,
             reference=base.reference,
             root_id=base.root_id,
@@ -178,5 +184,6 @@ class PreGradedAnswerResponse(AnswerResponse):
             element_id=answer.element_id,
             score=answer.score,
             data=answer.data,
+            comment=answer.comment,
             pre_grade=pre_grade_result,
         )

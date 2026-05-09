@@ -151,6 +151,119 @@ function CompactGradedView({
   );
 }
 
+function PreviousAnswerNotice({
+  grade,
+  earnedPoints,
+  maxPoints,
+  previousText,
+  comment,
+  invalidated,
+  compact = false,
+}: {
+  grade: number | null;
+  earnedPoints: number;
+  maxPoints: number;
+  previousText: string;
+  comment: string;
+  invalidated: boolean | undefined;
+  compact?: boolean;
+}) {
+  const label = gradeStatusLabel(grade);
+
+  if (compact) {
+    return (
+      <div
+        className={cx(
+          "mt-1 rounded-md border px-2 py-1",
+          invalidated
+            ? "border-blue-200 bg-blue-50/70 dark:border-blue-900/50 dark:bg-blue-900/20"
+            : "border-zinc-200 bg-zinc-50/80 dark:border-zinc-700 dark:bg-zinc-900/40",
+        )}
+      >
+        <div className="space-y-0.5">
+          <div className="text-[11px] leading-snug text-zinc-600 dark:text-zinc-300">
+            <span className="font-medium">Оцененный ответ</span>
+            {invalidated && " · неактуален"}
+          </div>
+          {grade !== null && (
+            <div className="text-[11px] leading-snug text-zinc-600 dark:text-zinc-300">
+              {label} · {earnedPoints.toFixed(2)} / {maxPoints.toFixed(2)}
+            </div>
+          )}
+          {previousText && (
+            <div className="truncate text-[11px] text-zinc-500 dark:text-zinc-400">
+              Ответ: {previousText}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={cx(
+        "mt-4 rounded-xl border px-4 py-3",
+        invalidated
+          ? "border-blue-200 bg-blue-50/70 dark:border-blue-900/50 dark:bg-blue-900/20"
+          : "border-zinc-200 bg-zinc-50/70 dark:border-zinc-700 dark:bg-zinc-900/30",
+      )}
+    >
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+            Оцененный ответ
+          </span>
+          {invalidated && (
+            <span className="text-xs font-medium text-blue-700 dark:text-blue-300">
+              Неактуален после редактирования
+            </span>
+          )}
+        </div>
+
+        {grade !== null && (
+          <div className="flex flex-wrap items-center gap-4">
+            <span
+              className={cx("text-sm font-semibold", gradeStatusColor(grade))}
+            >
+              {label}
+            </span>
+            <span className="text-sm tabular-nums text-zinc-700 dark:text-zinc-300">
+              <span className={cx("font-bold", gradeStatusColor(grade))}>
+                {earnedPoints.toFixed(2)}
+              </span>
+              <span className="text-zinc-500 dark:text-zinc-400">
+                {" "}
+                / {maxPoints.toFixed(2)} б.
+              </span>
+            </span>
+          </div>
+        )}
+
+        {previousText && (
+          <div className="rounded-lg bg-white/70 px-3 py-2 text-sm text-zinc-700 dark:bg-black/10 dark:text-zinc-300">
+            <span className="font-medium text-zinc-500 dark:text-zinc-400">
+              Оцененный ответ:
+            </span>{" "}
+            {previousText}
+          </div>
+        )}
+
+        {comment && (
+          <div className="rounded-lg bg-white/70 px-3 py-2 dark:bg-black/10">
+            <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+              Комментарий преподавателя
+            </div>
+            <div className="text-sm whitespace-pre-wrap text-zinc-800 dark:text-zinc-200">
+              {comment}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export const AnswerBlock = memo(function AnswerBlock(props: CommonBlockProps) {
   const {
     element,
@@ -175,7 +288,9 @@ export const AnswerBlock = memo(function AnswerBlock(props: CommonBlockProps) {
 
   const gradingInfo = answerGrading?.get(element.id);
   const grade = gradingInfo?.grade ?? null;
-
+  const previousGrade = gradingInfo?.previousGrade ?? null;
+  const previousEarnedPoints = gradingInfo?.previousEarnedPoints ?? 0;
+  const previousComment = gradingInfo?.previousComment ?? "";
   const [partialInputValue, setPartialInputValue] = useState<string>("");
 
   useEffect(() => {
@@ -209,8 +324,16 @@ export const AnswerBlock = memo(function AnswerBlock(props: CommonBlockProps) {
     !isGradingMode &&
     !textModified &&
     !isEditing &&
-    gradingInfo &&
+    !!gradingInfo &&
     grade !== null;
+
+  const hasHistoricalAssessment =
+    isEditing &&
+    !isGradingMode &&
+    !!gradingInfo &&
+    (previousGrade !== null ||
+      previousComment.trim().length > 0 ||
+      (gradingInfo.originalText?.trim().length ?? 0) > 0);
 
   const isTemplateEdit =
     !isReportMode && !isGradingMode && !isGradedView && !isReadOnly;
@@ -220,19 +343,27 @@ export const AnswerBlock = memo(function AnswerBlock(props: CommonBlockProps) {
   const showHint =
     !!hint && !!hint.hint && !isGradingMode && !isGradedView && !isTemplateEdit;
 
+  const previousText = gradingInfo?.originalText?.trim() ?? "";
+
   if (inCell) {
-    const showCellGrade = !textModified && (isGradingMode || isGradedView);
-    const cellBg = showCellGrade
-      ? status === "correct"
-        ? "bg-emerald-50/40 dark:bg-emerald-900/10"
-        : status === "partial"
-          ? "bg-amber-50/40 dark:bg-amber-900/10"
-          : status === "incorrect"
-            ? "bg-red-50/40 dark:bg-red-900/10"
-            : ""
-      : emptyInReport
-        ? "bg-amber-50/20 dark:bg-amber-900/5"
-        : "";
+    const showCellGrade =
+      !textModified &&
+      (isGradingMode || isGradedView || hasHistoricalAssessment);
+
+    const cellBg =
+      textModified && hasHistoricalAssessment
+        ? "bg-blue-50/40 dark:bg-blue-900/10"
+        : showCellGrade
+          ? status === "correct"
+            ? "bg-emerald-50/40 dark:bg-emerald-900/10"
+            : status === "partial"
+              ? "bg-amber-50/40 dark:bg-amber-900/10"
+              : status === "incorrect"
+                ? "bg-red-50/40 dark:bg-red-900/10"
+                : ""
+          : emptyInReport
+            ? "bg-amber-50/20 dark:bg-amber-900/5"
+            : "";
 
     return (
       <div className={cx("rounded-lg px-1 py-0.5 transition-colors", cellBg)}>
@@ -256,6 +387,18 @@ export const AnswerBlock = memo(function AnswerBlock(props: CommonBlockProps) {
           )}
           placeholder={placeholder}
         />
+
+        {hasHistoricalAssessment && gradingInfo && (
+          <PreviousAnswerNotice
+            grade={previousGrade}
+            earnedPoints={previousEarnedPoints}
+            maxPoints={maxPoints}
+            previousText={previousText}
+            comment={previousComment}
+            invalidated={textModified}
+            compact={true}
+          />
+        )}
 
         {isTemplateEdit && scoringInfo && (
           <div className="flex items-center gap-2 mt-1">
@@ -293,13 +436,16 @@ export const AnswerBlock = memo(function AnswerBlock(props: CommonBlockProps) {
           />
         )}
 
-        {isGradedView && gradingInfo && (
-          <CompactGradedView
-            grade={grade}
-            earnedPoints={earnedPoints}
-            maxPoints={maxPoints}
-          />
-        )}
+        {(isGradedView || (hasHistoricalAssessment && !textModified)) &&
+          gradingInfo &&
+          grade !== null && (
+            <CompactGradedView
+              grade={grade}
+              earnedPoints={earnedPoints}
+              maxPoints={maxPoints}
+            />
+          )}
+
         {showHint && (
           <div className="mt-1 animate-in fade-in duration-300">
             <div className="text-xs text-zinc-600 dark:text-zinc-400 leading-snug">
@@ -311,38 +457,50 @@ export const AnswerBlock = memo(function AnswerBlock(props: CommonBlockProps) {
     );
   }
 
-  const showFullGrade = !textModified && (isGradingMode || isGradedView);
+  const borderColor =
+    textModified && hasHistoricalAssessment
+      ? "border-blue-300 border-dashed dark:border-blue-700"
+      : emptyInReport
+        ? "border-amber-300 border-dashed dark:border-amber-700"
+        : showFullGradeOrPrevious(
+              isGradingMode,
+              isGradedView,
+              hasHistoricalAssessment,
+            )
+          ? status === "correct"
+            ? "border-emerald-300 dark:border-emerald-700"
+            : status === "partial"
+              ? "border-amber-300 dark:border-amber-700"
+              : status === "incorrect"
+                ? "border-red-300 dark:border-red-700"
+                : "border-zinc-200 dark:border-zinc-700"
+          : "border-zinc-200 dark:border-zinc-800";
 
-  const borderColor = emptyInReport
-    ? "border-amber-300 border-dashed dark:border-amber-700"
-    : showFullGrade
-      ? status === "correct"
-        ? "border-emerald-300 dark:border-emerald-700"
-        : status === "partial"
-          ? "border-amber-300 dark:border-amber-700"
-          : status === "incorrect"
-            ? "border-red-300 dark:border-red-700"
-            : "border-zinc-200 dark:border-zinc-700"
-      : "border-zinc-200 dark:border-zinc-800";
-
-  const bgColor = emptyInReport
-    ? "bg-amber-50/20 dark:bg-amber-900/5"
-    : showFullGrade
-      ? status === "correct"
-        ? "bg-emerald-50/30 dark:bg-emerald-900/10"
-        : status === "partial"
-          ? "bg-amber-50/30 dark:bg-amber-900/10"
-          : status === "incorrect"
-            ? "bg-red-50/30 dark:bg-red-900/10"
-            : "bg-white dark:bg-[#141416]"
-      : "bg-zinc-50/50 dark:bg-zinc-900/20";
+  const bgColor =
+    textModified && hasHistoricalAssessment
+      ? "bg-blue-50/30 dark:bg-blue-900/10"
+      : emptyInReport
+        ? "bg-amber-50/20 dark:bg-amber-900/5"
+        : showFullGradeOrPrevious(
+              isGradingMode,
+              isGradedView,
+              hasHistoricalAssessment,
+            )
+          ? status === "correct"
+            ? "bg-emerald-50/30 dark:bg-emerald-900/10"
+            : status === "partial"
+              ? "bg-amber-50/30 dark:bg-amber-900/10"
+              : status === "incorrect"
+                ? "bg-red-50/30 dark:bg-red-900/10"
+                : "bg-white dark:bg-[#141416]"
+          : "bg-zinc-50/50 dark:bg-zinc-900/20";
 
   const preGrade = gradingInfo?.preGrade;
   const preGradeScore = preGrade?.score ?? null;
   const hasDetails =
     (preGrade?.errors?.length ?? 0) > 0 || preGrade?.needsManualReview;
 
-  const isEmpty = showFullGrade && !text.trim();
+  const isEmpty = !text.trim();
 
   const choice = gradeToChoice(grade);
   const showPartialInput = choice === "partial" || partialOpen;
@@ -368,7 +526,7 @@ export const AnswerBlock = memo(function AnswerBlock(props: CommonBlockProps) {
         bgColor,
       )}
     >
-      {showFullGrade && (
+      {(isGradingMode || isGradedView) && (
         <div className="mb-3 flex items-center gap-3">
           <span className="text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
             Ответ студента
@@ -381,40 +539,38 @@ export const AnswerBlock = memo(function AnswerBlock(props: CommonBlockProps) {
         </div>
       )}
 
-      {(!showFullGrade || !isEmpty) && (
-        <div
+      <div
+        className={cx(
+          (isGradingMode || isGradedView || hasHistoricalAssessment) &&
+            "rounded-xl bg-white/60 dark:bg-zinc-900/40 px-4 py-3",
+        )}
+        onBlur={
+          !isReadOnly && !isGradingMode && onAnswerBlur
+            ? () => onAnswerBlur(element.id)
+            : undefined
+        }
+      >
+        <AutoResizeTextarea
+          value={text}
+          onChange={(val) => {
+            if (isReadOnly) return;
+            updateElement(element.id, { data: val });
+            onAnswerInput?.(element.id);
+          }}
+          readOnly={isReadOnly || isGradingMode}
           className={cx(
-            showFullGrade &&
-              "rounded-xl bg-white/60 dark:bg-zinc-900/40 px-4 py-3",
+            "w-full text-base text-zinc-900 outline-none bg-transparent leading-relaxed",
+            "placeholder:text-zinc-400 dark:text-zinc-100 dark:placeholder:text-zinc-600",
           )}
-          onBlur={
-            !isReadOnly && !isGradingMode && onAnswerBlur
-              ? () => onAnswerBlur(element.id)
-              : undefined
-          }
-        >
-          <AutoResizeTextarea
-            value={text}
-            onChange={(val) => {
-              if (isReadOnly) return;
-              updateElement(element.id, { data: val });
-              onAnswerInput?.(element.id);
-            }}
-            readOnly={isReadOnly || isGradingMode}
-            className={cx(
-              "w-full text-base text-zinc-900 outline-none bg-transparent leading-relaxed",
-              "placeholder:text-zinc-400 dark:text-zinc-100 dark:placeholder:text-zinc-600",
-            )}
-            placeholder={placeholder}
-          />
+          placeholder={placeholder}
+        />
 
-          {isTemplateEdit &&
-            availableQuestions &&
-            availableQuestions.all.length > 0 && (
-              <ParamLegend text={text} groups={availableQuestions} />
-            )}
-        </div>
-      )}
+        {isTemplateEdit &&
+          availableQuestions &&
+          availableQuestions.all.length > 0 && (
+            <ParamLegend text={text} groups={availableQuestions} />
+          )}
+      </div>
 
       {showHint && (
         <div className="mt-2 rounded-xl px-4 py-3 bg-blue-50/50 dark:bg-blue-900/10 animate-in fade-in slide-in-from-top-1 duration-300">
@@ -422,6 +578,17 @@ export const AnswerBlock = memo(function AnswerBlock(props: CommonBlockProps) {
             {hint.hint}
           </div>
         </div>
+      )}
+
+      {hasHistoricalAssessment && gradingInfo && (
+        <PreviousAnswerNotice
+          grade={previousGrade}
+          earnedPoints={previousEarnedPoints}
+          maxPoints={maxPoints}
+          previousText={previousText}
+          comment={previousComment}
+          invalidated={textModified}
+        />
       )}
 
       {isGradingMode && !textModified && gradingInfo && (
@@ -712,3 +879,11 @@ export const AnswerBlock = memo(function AnswerBlock(props: CommonBlockProps) {
     </div>
   );
 });
+
+function showFullGradeOrPrevious(
+  isGradingMode: boolean | undefined,
+  isGradedView: boolean,
+  hasHistoricalAssessment: boolean | undefined,
+) {
+  return isGradingMode || isGradedView || hasHistoricalAssessment;
+}

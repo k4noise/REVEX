@@ -1,8 +1,8 @@
-from fastapi import FastAPI, Request
-from starlette.responses import JSONResponse
-from starlette import status
 import structlog
+from fastapi import FastAPI, Request
 from sqlalchemy.exc import SQLAlchemyError
+from starlette import status
+from starlette.responses import JSONResponse
 
 logger = structlog.get_logger(__name__)
 
@@ -12,8 +12,8 @@ def register_db_error_handler(app: FastAPI) -> None:
     async def sqlalchemy_error_handler(
             request: Request,
             exc: SQLAlchemyError,
-    ):
-        logger.error(
+    ) -> JSONResponse:
+        logger.exception(
             "db.error",
             path=str(request.url.path),
             method=request.method,

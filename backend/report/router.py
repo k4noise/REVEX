@@ -9,21 +9,21 @@ from starlette.responses import Response, JSONResponse
 
 from answer.dependencies import get_grade_service
 from answer.schemas import UpdateAnswerDataRequest, UpdateAnswerScoresRequest
+from answer.services.grade import GradeService
 from core.auth.dependency import get_user, get_user_with_any_role
 from core.auth.user_model import User, UserRole
 from core.dependencies import get_cache
 from core.rate_limiter import HintRateLimiter
+from core.ttl_cache import RedisCache
 from lti.dependencies import get_nrps_service
 from lti.services.nrps import NrpsService
 from report.dependencies import get_report_service, get_hint_context_service
 from report.schemas.hint import NewHintRequest
 from report.schemas.report_status import ReportStatus
-from answer.services.grade import GradeService
 from report.services.hint_context import HintContextService
 from report.services.hint_generator import HintGenerator
 from report.services.report import ReportService
 from template.schemas.template import FullWorkResponse
-from core.ttl_cache import RedisCache
 
 router = APIRouter(prefix="/reports", tags=["Report"])
 
@@ -92,7 +92,7 @@ async def get_report(
         hint_context: HintContextService = Depends(get_hint_context_service),
 ):
     report = await report_service.get(user, report_id, nrps_service)
-    if report.status is ReportStatus.CREATED or report.status is ReportStatus.SAVED:
+    if report.status in {ReportStatus.CREATED, ReportStatus.SAVED}:
         cache: RedisCache = request.app.state.cache
         hint_context.cache(report, cache)
     return report
@@ -365,12 +365,17 @@ async def cancel_send_to_grade(
                 }
             },
         },
+        429: {
+            "description": "Превышен лимит запросов на подсказки",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "Слишком много запросов на подсказку. Повторите позже."
+                    }
+                }
+            },
+        },
     },
-)
-@router.post(
-    "/{report_id}/hint",
-    tags=["Report"],
-    summary="Получить подсказку при заполнении отчета",
 )
 async def get_hint(
         report_id: uuid.UUID,
@@ -398,14 +403,14 @@ async def get_hint(
     )
 
     if not decision.allowed:
-        if decision.hard_blocked:
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            )
+        headers = {}
+        if decision.retry_after > 0:
+            headers["Retry-After"] = str(decision.retry_after)
 
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            headers={"Retry-After": str(decision.retry_after)},
+            detail="Слишком много запросов на подсказку. Повторите позже.",
+            headers=headers,
         )
 
     context = hint_context.get_from_cache(hint_request, user, report_id, cache)
@@ -417,8 +422,10 @@ async def get_hint(
     if context is None:
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
-    hint = await HintGenerator().generate(context)
+    generator = HintGenerator()
+    hint = await generator.generate(context)
 
     if hint is None:
         return Response(status_code=status.HTTP_204_NO_CONTENT)
+
     return JSONResponse({"hint": hint})

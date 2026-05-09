@@ -12,8 +12,6 @@ from lti.services.nrps import NrpsService
 from report.services.report import ReportService
 from report.services.report_access_verifier import UpdateGradeInfo
 
-logger = structlog.get_logger(__name__)
-
 
 class GradeService:
     def __init__(
@@ -21,12 +19,12 @@ class GradeService:
             report_service: ReportService,
             background_task_service: BackgroundTaskService,
             nrps_service: NrpsService,
-            log=None,
+            logger=structlog.get_logger(__name__),
     ):
         self.report_service = report_service
         self.background_task_service = background_task_service
         self.nrps_service = nrps_service
-        self.logger = log or logger
+        self.logger = logger
 
     async def send_to_grade(self, user: User, report_id: uuid.UUID) -> None:
         self.logger.info(
@@ -46,7 +44,6 @@ class GradeService:
         )
         await self.report_service.submit(user, report_id)
 
-
     async def grade(
             self,
             user: User,
@@ -63,9 +60,14 @@ class GradeService:
         report = await self.report_service.get(user, report_id, self.nrps_service)
 
         score_map = {score.id: score.score for score in scores}
+        comment_map = {score.id: score.comment for score in scores}
+
         updated_answers: list[AnswerResponse] = [
             answer.model_copy(
-                update={"score": score_map.get(answer.id, answer.score)}
+                update={
+                    "score": score_map.get(answer.id, answer.score),
+                    "comment": comment_map.get(answer.id, answer.comment),
+                }
             )
             for answer in report.answers
         ]

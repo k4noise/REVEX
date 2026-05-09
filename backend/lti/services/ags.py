@@ -30,7 +30,7 @@ class AgsService:
 
         self.message_launch = message_launch
         self.ags = self.message_launch.get_ags()
-        self.logger = log or logger
+        self.logger = logger
 
     def create_lineitem(self, template: TemplateStructure) -> Optional[LineItem]:
         if template.is_draft:

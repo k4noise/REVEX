@@ -33,6 +33,10 @@ export interface AnswerGradingInfo {
   grade: number | null;
   maxPoints: number;
   earnedPoints: number;
+  previousGrade: number | null;
+  previousEarnedPoints: number;
+  previousComment: string;
+  previousStatus: GradingStatus;
   preGrade?: PreGradeResult | null;
   comment: string;
   status: GradingStatus;

@@ -54,10 +54,13 @@ class TemplateElementRepository:
             )
 
         for el in elements:
-            data = updates_map[el.id]
+            data = dict(updates_map[el.id])
 
-            if "properties" in data:
-                el.properties = (el.properties or {}) | data.pop("properties")
+            properties_update = data.pop("properties", None)
+            if properties_update:
+                current_properties = dict(el.properties or {})
+                current_properties.update(properties_update)
+                el.properties = current_properties
 
             for key, value in data.items():
                 if hasattr(el, key):

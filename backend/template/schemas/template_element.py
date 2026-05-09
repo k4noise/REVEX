@@ -117,6 +117,13 @@ class ElementUpdatePayload(BaseModel):
     question_id: Optional[str] = None
     question_text: Optional[str] = None
 
+    model_config = ConfigDict(
+        serialize_by_alias=True,
+        populate_by_name=True,
+        alias_generator=to_camel,
+        from_attributes=True,
+    )
+
 
 class ElementDeletePayload(BaseModel):
     id: uuid.UUID

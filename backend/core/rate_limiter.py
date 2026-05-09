@@ -40,7 +40,6 @@ class HintRateLimiter:
     ) -> None:
         self.cache = cache
         self.redis = cache._redis
-
         self.free_attempts = free_attempts
         self.max_attempts = max_attempts
         self.base_delay_seconds = base_delay_seconds
@@ -77,7 +76,7 @@ class HintRateLimiter:
         if hard_blocked:
             return HintRateLimitDecision(
                 allowed=False,
-                retry_after=self.state_ttl_seconds,
+                retry_after=self._ttl_remaining(key),
                 attempts=attempts,
                 hard_blocked=True,
             )
@@ -85,7 +84,7 @@ class HintRateLimiter:
         if blocked_until > now:
             return HintRateLimitDecision(
                 allowed=False,
-                retry_after=blocked_until - now,
+                retry_after=max(blocked_until - now, 0),
                 attempts=attempts,
                 hard_blocked=False,
             )
@@ -104,7 +103,7 @@ class HintRateLimiter:
             self._save_state(key, state)
             return HintRateLimitDecision(
                 allowed=False,
-                retry_after=self.state_ttl_seconds,
+                retry_after=self._ttl_remaining(key),
                 attempts=attempts,
                 hard_blocked=True,
             )
@@ -164,3 +163,9 @@ class HintRateLimiter:
 
     def _save_state(self, key: str, state: dict[str, Any]) -> None:
         self.cache.set(key, state, ttl=self.state_ttl_seconds)
+
+    def _ttl_remaining(self, key: str) -> int:
+        ttl = self.cache.ttl(key)
+        if ttl is None:
+            return self.state_ttl_seconds
+        return ttl

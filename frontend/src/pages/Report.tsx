@@ -193,10 +193,11 @@ export const ReportPage = ({ reportId, initialData }: ReportPageProps) => {
       if (ans.score != null && Number.isFinite(ans.score)) {
         initialGrades.set(ans.elementId, ans.score);
       }
-      if ((ans as any).comment) {
-        initialComments.set(ans.elementId, (ans as any).comment);
+      if (ans.comment) {
+        initialComments.set(ans.elementId, ans.comment);
       }
     }
+
     setAnswerGrades(initialGrades);
     setAnswerComments(initialComments);
   }, [reportId, reportAnswers]);
@@ -278,18 +279,39 @@ export const ReportPage = ({ reportId, initialData }: ReportPageProps) => {
     for (const [elementId, ans] of answerByElementId) {
       const scoring = globalScoring?.byAnswerId?.[elementId];
 
+      const originalText = ans.data ? extractAnswerText(ans.data) : "";
+      const currentText = currentAnswerTexts.get(elementId) ?? "";
+      const textModified = isEditableStatus && currentText !== originalText;
+
+      const rawPreviousGrade =
+        ans.score != null && Number.isFinite(ans.score)
+          ? ans.score
+          : isPreGraded(ans) &&
+              ans.preGrade?.score != null &&
+              Number.isFinite(ans.preGrade.score)
+            ? ans.preGrade.score
+            : null;
+
+      const previousGrade =
+        rawPreviousGrade != null
+          ? Math.min(1, Math.max(0, rawPreviousGrade))
+          : null;
+
+      const previousStatus = getGradingStatus(previousGrade);
+
       if (!scoring) {
-        console.warn(
-          `Scoring info not found for elementId: ${elementId}. The template might have changed.`,
-        );
         map.set(elementId, {
-          grade: ans.score,
+          grade: textModified ? null : previousGrade,
           maxPoints: 0,
           earnedPoints: 0,
+          previousGrade,
+          previousEarnedPoints: 0,
+          previousComment: ans.comment ?? "",
+          previousStatus,
           preGrade: isPreGraded(ans) ? ans.preGrade : undefined,
-          comment: (ans as any).comment ?? "",
-          status: getGradingStatus(ans.score),
-          originalText: ans.data ? extractAnswerText(ans.data) : "",
+          comment: answerComments.get(elementId) ?? ans.comment ?? "",
+          status: getGradingStatus(textModified ? null : previousGrade),
+          originalText,
         });
         continue;
       }
@@ -297,39 +319,34 @@ export const ReportPage = ({ reportId, initialData }: ReportPageProps) => {
       const safeMax = scoring.points;
       const preGrade = isPreGraded(ans) ? ans.preGrade : undefined;
 
-      const rawGrade =
+      const currentGrade =
         isGradingMode && answerGrades.has(elementId)
           ? answerGrades.get(elementId)!
-          : ans.score != null && Number.isFinite(ans.score)
-            ? ans.score
-            : preGrade?.score != null && Number.isFinite(preGrade.score)
-              ? preGrade.score
-              : null;
+          : previousGrade;
 
-      const originalText = ans.data ? extractAnswerText(ans.data) : "";
-      const currentText = currentAnswerTexts.get(elementId) ?? "";
-      const textModified = isEditableStatus && currentText !== originalText;
-
-      const effectiveGrade = textModified
-        ? null
-        : rawGrade != null && Number.isFinite(rawGrade)
-          ? Math.min(1, Math.max(0, rawGrade))
-          : null;
+      const effectiveGrade = textModified ? null : currentGrade;
 
       const earnedPoints =
         effectiveGrade !== null ? floorTo2(effectiveGrade * safeMax) : 0;
-      const comment = answerComments.get(elementId) ?? "";
+
+      const previousEarnedPoints =
+        previousGrade !== null ? floorTo2(previousGrade * safeMax) : 0;
 
       map.set(elementId, {
         grade: effectiveGrade,
         maxPoints: safeMax,
         earnedPoints,
+        previousGrade,
+        previousEarnedPoints,
+        previousComment: ans.comment ?? "",
+        previousStatus,
         preGrade,
-        comment,
+        comment: answerComments.get(elementId) ?? ans.comment ?? "",
         status: getGradingStatus(effectiveGrade),
         originalText,
       });
     }
+
     return map;
   }, [
     answerByElementId,
@@ -373,8 +390,7 @@ export const ReportPage = ({ reportId, initialData }: ReportPageProps) => {
       if (grade !== originalGrade) return true;
     }
     for (const [elementId, comment] of answerComments.entries()) {
-      const originalComment = (answerByElementId.get(elementId) as any)
-        ?.comment;
+      const originalComment = answerByElementId.get(elementId)?.comment;
       if (comment !== originalComment) return true;
     }
     return false;
@@ -462,6 +478,7 @@ export const ReportPage = ({ reportId, initialData }: ReportPageProps) => {
           payload.push({
             id: ans.id,
             score: info.grade ?? 0,
+            comment: info.comment ?? "",
           });
         }
       }
@@ -469,12 +486,28 @@ export const ReportPage = ({ reportId, initialData }: ReportPageProps) => {
     },
     onSuccess: async () => {
       toast.success("Работа оценена");
+
+      const tplId = report.template?.id;
+
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: templateQueryKeys.all }),
         queryClient.invalidateQueries({
           queryKey: reportQueryKeys.detail(reportId),
         }),
+        ...(tplId
+          ? [
+              queryClient.invalidateQueries({
+                queryKey: templateQueryKeys.reports(tplId),
+              }),
+            ]
+          : []),
       ]);
+
+      if (tplId) {
+        queryClient.removeQueries({
+          queryKey: templateQueryKeys.reports(tplId),
+        });
+      }
 
       if (gradingQueue.isInQueue) {
         if (gradingQueue.hasNext) {
@@ -485,7 +518,6 @@ export const ReportPage = ({ reportId, initialData }: ReportPageProps) => {
           }
         }
 
-        const tplId = gradingQueue.templateId;
         clearGradingQueue();
         toast.success("Все работы проверены");
 
@@ -500,7 +532,6 @@ export const ReportPage = ({ reportId, initialData }: ReportPageProps) => {
         return;
       }
 
-      const tplId = report.template?.id;
       if (tplId) {
         navigate({
           to: "/template/$templateId/reports",
@@ -557,9 +588,11 @@ export const ReportPage = ({ reportId, initialData }: ReportPageProps) => {
       navigate({ to: "/" });
     }
   };
+
   const pageTitle = `${
     isGradingMode ? "Проверка" : isGradedView ? "Результат" : "Отчет"
   }: ${report.template?.name ?? "Без названия"}`;
+
   return (
     <>
       <Helmet>

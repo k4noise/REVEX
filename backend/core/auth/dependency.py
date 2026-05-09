@@ -1,34 +1,46 @@
+from collections.abc import Callable
+
 from authx import TokenPayload
 from fastapi import Depends, HTTPException
 from starlette import status
+from structlog.contextvars import bind_contextvars
 
 from config.auth import auth
 from core.auth.user_model import UserRole, User
-from structlog.contextvars import bind_contextvars
+
+
+def _to_bool(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return False
 
 
 async def get_user_base(
         payload: TokenPayload = Depends(auth.access_token_required),
 ) -> User:
-    accepted_policy = getattr(payload, "accepted_policy", False)
-
     try:
-        roles = [UserRole(r) for r in (payload.scopes or [])]
-    except ValueError:
+        user = User(
+            id=str(payload.sub),
+            roles=payload.scopes or [],
+            launch_id=str(getattr(payload, "launch_id", "")),
+            course_id=str(getattr(payload, "course_id", "")),
+            accepted_policy=_to_bool(getattr(payload, "accepted_policy", False)),
+        )
+    except (ValueError, TypeError):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Invalid role in token",
         )
 
-    user = User(
-        id=str(payload.sub),
-        roles=roles,
-        launch_id=str(getattr(payload, "launch_id", "")),
-        course_id=str(getattr(payload, "course_id", "")),
-        accepted_policy=accepted_policy,
+    bind_contextvars(
+        user_id=user.id,
+        course_id=user.course_id,
+        launch_id=user.launch_id,
     )
-
-    bind_contextvars(user_id=user.id, course_id=user.course_id)
 
     return user
 
@@ -44,7 +56,10 @@ async def get_user(
     return user
 
 
-def get_user_with_any_role(*roles: UserRole):
+def get_user_with_any_role(*roles: UserRole) -> Callable:
+    if not roles:
+        raise ValueError("At least one role must be provided")
+
     async def require_any_of_roles(user: User = Depends(get_user)) -> User:
         if not any(role in roles for role in user.roles):
             raise HTTPException(

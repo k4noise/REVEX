@@ -5,10 +5,10 @@ import { ReportsListPage } from "../../../pages/ReportsList";
 
 export const Route = createFileRoute("/template/$templateId/reports")({
   loader: async ({ context: { queryClient }, params: { templateId } }) => {
-    const template = await queryClient.ensureQueryData({
+    const template = await queryClient.fetchQuery({
       queryKey: queryKeys.detail(templateId),
       queryFn: () => templateApi.getById(templateId),
-      staleTime: 1000 * 60 * 5,
+      staleTime: 0,
     });
 
     const reportsHref = template._links.get_reports?.href;
@@ -23,10 +23,10 @@ export const Route = createFileRoute("/template/$templateId/reports")({
       } satisfies AllReportsResponse;
     }
 
-    return queryClient.ensureQueryData({
+    return queryClient.fetchQuery({
       queryKey: queryKeys.reports(templateId),
       queryFn: () => templateApi.getReports(reportsHref),
-      staleTime: 1000 * 60 * 5,
+      staleTime: 0,
     });
   },
   component: ReportsRouteComponent,

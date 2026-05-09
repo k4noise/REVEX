@@ -1,19 +1,40 @@
 import json
-import redis
 from datetime import timedelta
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
+
+import redis
 
 
 class RedisCache:
-    def __init__(self, host='localhost', port=6379, db=0):
-        self._redis = redis.Redis(
-            host=host,
-            port=port,
-            db=db,
-            decode_responses=False,
-            socket_timeout=5,
-            socket_connect_timeout=5
-        )
+    def __init__(
+            self,
+            redis_url: Optional[str] = None,
+            host: str = "localhost",
+            port: int = 6379,
+            db: int = 0,
+            password: Optional[str] = None,
+            username: Optional[str] = None,
+    ):
+        if redis_url:
+            self._redis = redis.Redis.from_url(
+                redis_url,
+                decode_responses=False,
+                socket_timeout=5,
+                socket_connect_timeout=5,
+            )
+        else:
+            self._redis = redis.Redis(
+                host=host,
+                port=port,
+                db=db,
+                username=username,
+                password=password,
+                decode_responses=False,
+                socket_timeout=5,
+                socket_connect_timeout=5,
+            )
+
+        self._redis.ping()
 
     def get(self, key: str) -> Any:
         try:
@@ -27,6 +48,8 @@ class RedisCache:
     def set(self, key: str, value: Any, ttl: timedelta | int):
         try:
             ttl_seconds = ttl.total_seconds() if isinstance(ttl, timedelta) else ttl
+            if ttl_seconds <= 0:
+                return
             serialized = json.dumps(value, default=str)
             self._redis.set(key, serialized, ex=int(ttl_seconds))
         except Exception:
@@ -37,6 +60,15 @@ class RedisCache:
             self._redis.delete(key)
         except Exception:
             pass
+
+    def ttl(self, key: str) -> int | None:
+        try:
+            ttl = self._redis.ttl(key)
+            if ttl is None or ttl < 0:
+                return None
+            return int(ttl)
+        except Exception:
+            return None
 
     def get_many(self, keys: List[str]) -> Dict[str, Any]:
         try:
@@ -53,30 +85,48 @@ class RedisCache:
         except Exception:
             return {}
 
-    def set_many_if_not_present(self, data: Dict[str, Any], ttl: timedelta | int) -> bool:
+    def set_many_if_not_present(
+            self,
+            data: Dict[str, Any],
+            ttl: timedelta | int,
+    ) -> bool:
         try:
             ttl_seconds = ttl.total_seconds() if isinstance(ttl, timedelta) else ttl
-            pipe = self._redis.pipeline()
-
-            for key in data.keys():
-                pipe.exists(key)
-
-            exists = pipe.execute()
-            if any(exists):
+            if ttl_seconds <= 0:
                 return False
 
-            pipe = self._redis.pipeline()
-            for key, value in data.items():
-                serialized = json.dumps(value, default=str)
-                pipe.set(key, serialized, ex=int(ttl_seconds), nx=True)
+            keys = list(data.keys())
 
-            results = pipe.execute()
-            return all(r is True for r in results)
+            while True:
+                try:
+                    with self._redis.pipeline() as pipe:
+                        pipe.watch(*keys)
+                        existing = pipe.mget(keys)
+
+                        if any(value is not None for value in existing):
+                            pipe.reset()
+                            return False
+
+                        pipe.multi()
+                        for key, value in data.items():
+                            serialized = json.dumps(value, default=str)
+                            pipe.set(key, serialized, ex=int(ttl_seconds), nx=True)
+
+                        results = pipe.execute()
+                        return all(result is True for result in results)
+                except redis.WatchError:
+                    continue
         except Exception:
             return False
 
     def clear(self):
         try:
-            self._redis.flushdb()
+            cursor = 0
+            while True:
+                cursor, keys = self._redis.scan(cursor=cursor, count=500)
+                if keys:
+                    self._redis.delete(*keys)
+                if cursor == 0:
+                    break
         except Exception:
             pass

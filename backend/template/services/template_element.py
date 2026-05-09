@@ -40,10 +40,46 @@ class TemplateElementService:
                 ids_to_delete.append(patch.payload.id)
 
             elif patch.action == PatchAction.UPDATE:
-                updates_map[patch.payload.id] = patch.payload.model_dump(
+                payload = patch.payload.model_dump(
                     exclude_unset=True,
                     exclude={"id"},
+                    by_alias=False,
                 )
+
+                update_data: dict[str, Any] = {}
+                properties_update: dict[str, Any] = {}
+
+                direct_columns = {
+                    "parent_element_id",
+                    "order",
+                    "data",
+                    "display_mode",
+                }
+
+                property_fields = {
+                    "marker",
+                    "level",
+                    "media_key",
+                    "alt_text",
+                    "max_score",
+                    "hint",
+                    "rowspan",
+                    "colspan",
+                    "similar_theory",
+                    "question_id",
+                    "question_text",
+                }
+
+                for key, value in payload.items():
+                    if key in direct_columns:
+                        update_data[key] = value.value if hasattr(value, "value") else value
+                    elif key in property_fields:
+                        properties_update[key] = value.value if hasattr(value, "value") else value
+
+                if properties_update:
+                    update_data["properties"] = properties_update
+
+                updates_map[patch.payload.id] = update_data
 
             elif patch.action == PatchAction.CREATE:
                 real_id = uuid.uuid4() if isinstance(patch.payload.id, str) else patch.payload.id

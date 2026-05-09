@@ -17,6 +17,7 @@ export interface AnswerData {
   elementId: string;
   score: number | null;
   data: Record<string, unknown> | null;
+  comment?: string | null;
 }
 
 export interface PreGradeError {
@@ -107,7 +108,9 @@ export interface UpdateAnswerDataPayload {
 export interface UpdateAnswerScorePayload {
   id: string;
   score: number;
+  comment?: string | null;
 }
+
 export interface HintAnswerPayload {
   id: string;
   element_id: string;

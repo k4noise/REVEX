@@ -29,11 +29,8 @@ from report.schemas.report import (
 from template.exceptions import InvalidActionException
 from template.schemas.template import TemplateDetailResponse, FullWorkResponse
 
-logger = structlog.get_logger(__name__)
-
 
 def _flatten_elements(elements: Sequence) -> list:
-    """Расплющивает дерево элементов шаблона в плоский список."""
     result: list = []
 
     def _walk(nodes: Sequence) -> None:
@@ -52,11 +49,11 @@ class ReportService:
             self,
             repository: ReportRepository,
             answer_service: AnswerService,
-            log=None,
+            logger=structlog.get_logger(__name__),
     ):
         self.repository = repository
         self.answer_service = answer_service
-        self.logger = log or logger
+        self.logger = logger
 
     async def create(
             self,

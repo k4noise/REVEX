@@ -12,8 +12,6 @@ from lti.services.course import CourseService
 
 
 class NrpsService:
-    """Получение данных пользователя из службы ролей и имен LTI NRPS"""
-
     def __init__(self, message_launch: MessageLaunch, logger = structlog.get_logger(__name__)):
         if not message_launch.has_nrps():
             raise NrpsNotSupportedException()
@@ -28,12 +26,10 @@ class NrpsService:
         pass
 
     def get_user_by_id(self, user_id: str) -> Optional[NrpsUser]:
-        """Получить данные из NRPS по идентификатору пользователя"""
         self._ensure_members_loaded()
         return self._members_map.get(user_id)
 
     def _ensure_members_loaded(self) -> None:
-        """Загружает данные, если они еще не были загружены"""
         if self._members_map is None:
             members = self.message_launch.get_nrps().get_members()
             self.logger.warning(f"Получен доступ к данным NRPS в курсе {CourseService(self.message_launch).name}")

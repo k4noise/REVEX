@@ -48,6 +48,7 @@ class AnswerRepository:
                 score=answer_data.score,
                 data=answer_data.data,
                 pre_grade=answer_data.pre_grade,
+                comment=answer_data.comment,
             )
             for answer_data in answers_data
         ]
@@ -99,6 +100,7 @@ class AnswerRepository:
                 data=data_case_expr,
                 score=None,
                 pre_grade=None,
+                comment=None,
             )
         )
 
@@ -134,15 +136,23 @@ class AnswerRepository:
 
         answer_ids: list[uuid.UUID] = []
         score_updates: dict[uuid.UUID, float | None] = {}
+        comment_updates: dict[uuid.UUID, str | None] = {}
 
         for item in scores:
             answer_ids.append(item.id)
             score_updates[item.id] = item.score
+            comment_updates[item.id] = item.comment
 
         score_case_expr = case(
             score_updates,
             value=Answer.id,
             else_=Answer.score,
+        )
+
+        comment_case_expr = case(
+            comment_updates,
+            value=Answer.id,
+            else_=Answer.comment,
         )
 
         statement = (
@@ -151,7 +161,10 @@ class AnswerRepository:
                 Answer.report_id == report_id,
                 Answer.id.in_(answer_ids),
                 )
-            .values(score=score_case_expr)
+            .values(
+                score=score_case_expr,
+                comment=comment_case_expr,
+            )
         )
 
         result = await self.session.execute(statement)
@@ -193,7 +206,6 @@ class AnswerRepository:
         for ga in graded_answers:
             answer_ids.append(ga.id)
             pregrade_updates[ga.id] = ga.pre_grade
-
 
         pregrade_updates_serialized = {
             k: type_coerce(v, JSON)

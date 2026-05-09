@@ -120,11 +120,15 @@ export function TemplatePage({ templateId, initialData }: TemplatePageProps) {
         body.elements = { patches };
       }
 
-      if (Object.keys(body).length === 0) return;
+      const shouldUpdate = Object.keys(body).length > 0;
 
-      await templateApi.update(updateHref, body);
+      if (shouldUpdate) {
+        await templateApi.update(updateHref, body);
+      }
 
-      if (mode === "publish") await templateApi.publish(publishHref!);
+      if (mode === "publish") {
+        await templateApi.publish(publishHref!);
+      }
     },
     onSuccess: async (_data, variables) => {
       await queryClient.invalidateQueries({
