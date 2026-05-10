@@ -55,7 +55,7 @@ class ParserConfig:
     ORPHAN_DOT_RE: re.Pattern = re.compile(r"^\.\s+")
     BULLET_NORMALIZE_RE: re.Pattern = re.compile(r"^[●·■]\s*")
     QUESTION_SPLIT_RE: re.Pattern = re.compile(
-        r"(?:\r?\n)+"  # пустые строки
+        r"(?:\r?\n)+"  
         r"\s*"
         r"(?="
         r"(?:"
@@ -878,7 +878,6 @@ class DedocTemplateParser:
         )
 
         try:
-            # 1. Достаём данные из dedoc
             try:
                 api_data = self._extract(file_path)
             except Exception as e:
@@ -890,7 +889,6 @@ class DedocTemplateParser:
                 )
                 raise TemplateParseException() from e
 
-            # 2. Вложения и таблицы
             attachments_map = self._process_attachments(
                 api_data.get("attachments", []) or [],
                 document_uuid,
@@ -904,7 +902,6 @@ class DedocTemplateParser:
                 tables=len(tables_map),
             )
 
-            # 3. Построение и очистка дерева
             refiner = TreeRefiner()
             refiner.tables = tables_map
             refiner.attachments = attachments_map
@@ -917,7 +914,6 @@ class DedocTemplateParser:
             tree = self._build_tree(root_data)
             refined_tree = refiner.refine(tree)
 
-            # 4. Генерация патчей
             factory = PatchFactory()
             patches = factory.create_patches(
                 [node for node in refined_tree.children if node.has_content()]
@@ -932,10 +928,8 @@ class DedocTemplateParser:
             return patches
 
         except TemplateParseException:
-            # уже залогировано выше, просто пробрасываем дальше
             raise
         except Exception as e:
-            # любые неожиданные ошибки пайплайна
             logger.exception(
                 "parser.dedoc.unexpected_error",
                 file_path=file_path,

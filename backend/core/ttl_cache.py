@@ -1,4 +1,5 @@
 import json
+import os
 from datetime import timedelta
 from typing import Any, Dict, List, Optional
 
@@ -9,12 +10,14 @@ class RedisCache:
     def __init__(
             self,
             redis_url: Optional[str] = None,
-            host: str = "localhost",
-            port: int = 6379,
-            db: int = 0,
+            host: Optional[str] = None,
+            port: Optional[int] = None,
+            db: Optional[int] = None,
             password: Optional[str] = None,
             username: Optional[str] = None,
     ):
+        redis_url = redis_url or os.getenv("REDIS_URL")
+
         if redis_url:
             self._redis = redis.Redis.from_url(
                 redis_url,
@@ -24,11 +27,11 @@ class RedisCache:
             )
         else:
             self._redis = redis.Redis(
-                host=host,
-                port=port,
-                db=db,
-                username=username,
-                password=password,
+                host=host or os.getenv("REDIS_HOST", "localhost"),
+                port=port or int(os.getenv("REDIS_PORT", "6379")),
+                db=db if db is not None else int(os.getenv("REDIS_DB", "0")),
+                username=username or os.getenv("REDIS_USERNAME") or None,
+                password=password or os.getenv("REDIS_PASSWORD") or None,
                 decode_responses=False,
                 socket_timeout=5,
                 socket_connect_timeout=5,
