@@ -1,10 +1,42 @@
-# Python-generated files
+# Python
 __pycache__/
-*.py[oc]
+*.py[cod]
+*$py.class
+*.so
+.Python
 build/
+develop-eggs/
 dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
 wheels/
-*.egg-info
+*.egg-info/
+.installed.cfg
+*.egg
 
-# Virtual environments
-.venv
+# Virtual Environments
+.venv/
+venv/
+ENV/
+
+# IDEs
+.idea/
+.vscode/
+*.iml
+
+# Local Config & Secrets (КРИТИЧНО)
+.env
+config/keys/*
+!config/keys/.gitkeep
+config/lti_config.json
+sql_app.db
+
+# Logs
+*.log
+/images/

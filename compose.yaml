@@ -1,17 +1,74 @@
-services:
-  frontend:
-    build:
-      context: ./frontend
-    networks:
-      - labstructanalyzer
+volumes:
+  redis_data:
 
+services:
   backend:
     build:
       context: ./backend
+    env_file:
+      - ${BACKEND_ENV_FILE:-./.env}
+    environment:
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+    volumes:
+      - ${LOG_DIR:-./logs}:/app/logs
+      - ${KEYS_DIR:-./config/keys}:/app/config/keys:ro
+      - ${LTI_CONFIG_PATH:-./lti_config.json}:/app/config/lti_config.json:ro
+      - ${IMAGES_DIR:-./images}:/app/images
+      - ./assets:/assets:ro
     restart: unless-stopped
     networks:
-      - labstructanalyzer
+      - revex
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  nginx:
+    build:
+      context: .
+      dockerfile: nginx/Dockerfile
+    ports:
+      - "${PORT:-3162}:80"
+    volumes:
+      - ${IMAGES_DIR:-./images}:/usr/share/nginx/static/images
+    depends_on:
+      - backend
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - revex
+
+  redis:
+    image: redis:8.0.3-alpine
+    profiles: ["with-redis"]
+    command: redis-server --maxmemory 64mb --maxmemory-policy allkeys-lru
+    mem_limit: 96M
+    cpus: 0.2
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - revex
+
+  worker:
+    build:
+      context: ./backend
+    command: uv run rq worker --url ${REDIS_URL:-redis://redis:6379/0} pregrading
+    env_file:
+      - ${BACKEND_ENV_FILE:-./.env}
+    environment:
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+    volumes:
+      - ${LOG_DIR:-./logs}:/app/logs
+      - ${KEYS_DIR:-./config/keys}:/app/config/keys:ro
+      - ${LTI_CONFIG_PATH:-./lti_config.json}:/app/config/lti_config.json:ro
+      - ${IMAGES_DIR:-./images}:/app/images
+      - ./assets:/assets:ro
+    restart: unless-stopped
+    networks:
+      - revex
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 networks:
-    labstructanalyzer:
-      driver: bridge
+  revex:
+    driver: bridge

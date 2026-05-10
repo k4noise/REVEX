@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <title>{{ title }}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        :root { color-scheme: light; }
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: Inter, Arial, sans-serif; background: #f6f7fb; color: #1f2937; }
+        .wrap { max-width: 820px; margin: 40px auto; padding: 0 16px; }
+        .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 16px; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.04); }
+        h1 { margin: 0 0 12px; font-size: 28px; }
+        .subtitle { margin: 0 0 24px; color: #6b7280; font-size: 15px; }
+        .hint { margin: 0 0 20px; padding: 12px; background: #f3f4f6; border-radius: 12px; font-size: 14px; }
+        .list { display: grid; gap: 12px; margin: 20px 0 24px; }
+        .item { border: 1px solid #dbe1ea; border-radius: 14px; padding: 16px; transition: all .15s; }
+        .item:hover { border-color: #9ca3af; box-shadow: 0 6px 18px rgba(0,0,0,0.05); }
+        .item label { display: flex; gap: 12px; cursor: pointer; }
+        .item-title { font-size: 16px; font-weight: 600; }
+        .item-meta { font-size: 14px; color: #6b7280; }
+        .empty { padding: 16px; border-radius: 12px; background: #fff7ed; color: #9a3412; border: 1px solid #fdba74; }
+        .actions { display: flex; gap: 12px; margin-top: 8px; }
+        button { border: 0; border-radius: 12px; padding: 12px 18px; font-weight: 600; cursor: pointer; }
+        .primary { background: #2563eb; color: #fff; }
+        .secondary { background: #e5e7eb; }
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <div class="card">
+        <h1>{{ title }}</h1>
+        {% if text %}<p class="subtitle">{{ text }}</p>{% endif %}
+        <div class="hint">Выберите один шаблон из списка ниже.</div>
+        {% if templates %}
+        <form method="post" action="{{ request.url_for('lti_deep_link_select') }}">
+            <input type="hidden" name="state" value="{{ state }}">
+            <div class="list">
+                {% for tpl in templates %}
+                <div class="item">
+                    <label>
+                        <input type="radio" name="template_ids" value="{{ tpl.id }}" {% if loop.first %}checked{% endif %}>
+                        <span>
+                            <div class="item-title">{{ tpl.name }}</div>
+                            <div class="item-meta">Max score: {{ tpl.max_score if tpl.max_score is not none else "—" }}</div>
+                        </span>
+                    </label>
+                </div>
+                {% endfor %}
+            </div>
+            <div class="actions"><button class="primary" type="submit">Добавить в LMS</button></div>
+        </form>
+        {% else %}<div class="empty">Нет доступных шаблонов для этого курса.</div>{% endif %}
+        <form method="post" action="{{ request.url_for('lti_deep_link_cancel') }}">
+            <input type="hidden" name="state" value="{{ state }}">
+            <div class="actions"><button class="secondary" type="submit">Отмена</button></div>
+        </form>
+    </div>
+</div>
+</body>
+</html>

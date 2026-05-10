@@ -1,0 +1,16 @@
+{
+  "http://moodle_external_lms_url": [
+    {
+      "client_id": "replace from your moodle after external tool creation",
+      "auth_login_url": "http://moodle_external_lms_url/mod/lti/auth.php",
+      "auth_token_url": "http://moodle_external_lms_url/mod/lti/token.php",
+      "key_set_url": "http://moodle_external_lms_url/mod/lti/certs.php",
+      "key_set": null,
+      "private_key_file": "keys/jwtRS256.key",
+      "public_key_file": "keys/jwtRS256.key.pub",
+      "deployment_ids": [
+        "replace from your moodle after external tool creation"
+      ]
+    }
+  ]
+}
