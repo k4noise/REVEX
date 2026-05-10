@@ -293,7 +293,7 @@ echo "REDIS_URL=$$REDIS_URL записан в $$BACKEND_ENV_FILE."
 ask_yn EDIT_ENV "Открыть $$BACKEND_ENV_FILE в редакторе?" "y"
 [ "$$EDIT_ENV" = "y" ] && edit_file "$$BACKEND_ENV_FILE"
 
-REQUIRED=(JWT_SECRET_KEY DATABASE_URL REDIS_URL FRONTEND_URL PUBLIC_BACKEND_URL LLM_BASE_URL LLM_API_KEY LLM_MODEL)
+REQUIRED=(JWT_SECRET_KEY DATABASE_URL REDIS_URL PUBLIC_BACKEND_URL LLM_BASE_URL LLM_API_KEY LLM_MODEL)
 while ! check_env_vars "$$BACKEND_ENV_FILE" "$${REQUIRED[@]}"; do
   ask_yn REOPEN "Открыть ещё раз?" "y"
   if [ "$$REOPEN" = "y" ]; then
@@ -413,7 +413,7 @@ doctor:
 	@echo "Redis на хосте: $(HOST_REDIS_AVAILABLE)"
 	@echo "REDIS_URL: $(REDIS_URL)"
 	@if [ -f $(BACKEND_ENV_FILE) ]; then \
-		for v in JWT_SECRET_KEY DATABASE_URL REDIS_URL FRONTEND_URL PUBLIC_BACKEND_URL LLM_BASE_URL LLM_API_KEY LLM_MODEL; do \
+		for v in JWT_SECRET_KEY DATABASE_URL REDIS_URL PUBLIC_BACKEND_URL LLM_BASE_URL LLM_API_KEY LLM_MODEL; do \
 			if grep -qE "^$$v=.+" $(BACKEND_ENV_FILE); then echo "$$v: OK"; else echo "$$v: НЕТ"; fi; \
 		done; \
 	fi
