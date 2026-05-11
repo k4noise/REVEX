@@ -3,7 +3,7 @@ import {
   Outlet,
   useRouter,
 } from "@tanstack/react-router";
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, useRef } from "react";
 import type { QueryClient } from "@tanstack/react-query";
 import { useQueryClient } from "@tanstack/react-query";
 import { Helmet, HelmetProvider } from "react-helmet-async";
@@ -27,39 +27,54 @@ function GlobalErrorHandler() {
   const router = useRouter();
 
   useEffect(() => {
-    const handlePrivacyRedirect = (error: unknown) => {
+    const handlePrivacyRedirect = (error: unknown, source: string) => {
       if (isApiError(error) && error.status === 451) {
-        if (router.state.location.pathname !== "/privacy") {
-          router.navigate({ to: "/privacy" });
+        const currentPath = router.state.location.pathname;
+        if (currentPath !== "/privacy") {
+          router.navigate({ to: "/privacy", replace: true });
         }
       }
     };
 
-    const handleAuthError = (error: unknown) => {
+    const handleAuthError = (error: unknown, source: string) => {
       if (isJwtError(error)) {
-        console.error("JWT Error: User should be logged out.");
-        router.navigate({ to: "/" });
+        const currentPath = router.state.location.pathname;
+
+        console.error("[GlobalErrorHandler] JWT Error: should logout", {
+          source,
+          currentPath,
+          error,
+        });
+
+        if (currentPath !== "/") {
+          router.navigate({ to: "/", replace: true });
+        }
       }
     };
 
     const queryUnsubscribe = queryClient.getQueryCache().subscribe((event) => {
-      if (event.type === "updated" && event.query.state.status === "error") {
-        const error = event.query.state.error;
-        handlePrivacyRedirect(error);
-        handleAuthError(error);
-      }
+      const query = event?.query;
+      const state = query?.state;
+      const error = state?.error;
+
+      if (!error) return;
+
+      handlePrivacyRedirect(error, "query");
+      handleAuthError(error, "query");
     });
 
     const mutationUnsubscribe = queryClient
       .getMutationCache()
       .subscribe((event) => {
-        if (
-          event.type === "updated" &&
-          event.mutation.state.status === "error"
-        ) {
-          const error = event.mutation.state.error;
-          handleAuthError(error);
-        }
+        const mutation = event?.mutation;
+        const state = mutation?.state;
+        const error = state?.error;
+
+
+        if (!error) return;
+
+        handlePrivacyRedirect(error, "mutation");
+        handleAuthError(error, "mutation");
       });
 
     return () => {
@@ -113,7 +128,41 @@ function getErrorMessage(error: unknown): string {
 
 function RootErrorComponent({ error }: { error: unknown }) {
   const router = useRouter();
+  const didNavigateRef = useRef(false);
+
+  useEffect(() => {
+    if (didNavigateRef.current) return;
+
+    const currentPath = router.state.location.pathname;
+
+    if (isApiError(error) && error.status === 451) {
+      if (currentPath !== "/privacy") {
+        didNavigateRef.current = true;
+        router.navigate({ to: "/privacy", replace: true });
+      }
+      return;
+    }
+
+    if (isJwtError(error)) {
+      if (currentPath !== "/") {
+        didNavigateRef.current = true;
+        router.navigate({ to: "/", replace: true });
+      }
+      return;
+    }
+  }, [error, router]);
+
+  const currentPath = router.state.location.pathname;
+  const shouldAutoRedirectToPrivacy =
+    isApiError(error) && error.status === 451 && currentPath !== "/privacy";
+  const shouldAutoRedirectToHome = isJwtError(error) && currentPath !== "/";
+
+  if (shouldAutoRedirectToPrivacy || shouldAutoRedirectToHome) {
+    return null;
+  }
+
   const message = getErrorMessage(error);
+
   const isRetryable = !(
     isApiError(error) &&
     (error.status === 404 || error.status === 403)
@@ -125,9 +174,12 @@ function RootErrorComponent({ error }: { error: unknown }) {
         <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50 mb-2">
           Что-то пошло не так
         </h1>
+
         <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-6">
           {message}
         </p>
+
+
         <div className="flex justify-center gap-3">
           {isRetryable && (
             <button
@@ -138,6 +190,7 @@ function RootErrorComponent({ error }: { error: unknown }) {
               Повторить
             </button>
           )}
+
           <button
             type="button"
             onClick={() => router.navigate({ to: "/" })}
