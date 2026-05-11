@@ -11,6 +11,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
     ca-certificates \
+    libreoffice \
+    djvulibre-bin \
+    poppler-utils \
+    tesseract-ocr \
+    tesseract-ocr-rus \
+    unzip \
+    unrar \
+    libmagic1 \
+    libgl1 \
+    libsm6 \
+    libxext6 \
     && rm -rf /var/lib/apt/lists/*
 
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
