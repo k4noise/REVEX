@@ -13,20 +13,20 @@ from template.schemas.template_element import TemplateElementResponse
 
 
 class ErrorType(str, Enum):
-    MISSING_NUMBER = "missing_number"
-    PARAM_MISMATCH = "param_mismatch"
     PARAM_PREGRADE_FAILED = "param_pregrade_failed"
+    MISSING_NUMBER = "missing_number"
     LITERAL_MISSING = "literal_missing"
+    KEYWORD_MISMATCH = "keyword_mismatch"
+    PARAM_MISMATCH = "param_mismatch"
     REGEX_NO_MATCH = "regex_no_match"
     SEMANTIC_MISMATCH = "semantic_mismatch"
     WEAK_SEMANTIC_MATCH = "weak_semantic_match"
-    KEYWORD_MISMATCH = "keyword_mismatch"
 
 
 @dataclass
 class ErrorDetail:
     type: ErrorType
-    expected: str
+    expected: str = ""
     actual: Optional[str] = None
 
 
@@ -36,29 +36,50 @@ class GradeResult:
     errors: List[ErrorDetail]
     needs_manual_review: bool = False
     type: str = "pipeline"
+    explanation: Optional[str] = None
 
 
 @dataclass
 class GradingContext:
-    original_given: str
-    original_reference: str
-    resolved_reference: str
-    current_given: str
-    current_reference: str
-    fast_mode: bool
-    strict_match: bool = False
-    final_score: float = 1.0
-    is_perfect_match: bool = False
-    errors: List[ErrorDetail] = field(default_factory=list)
+    raw_given: str
+    raw_reference: str
 
-    @property
-    def should_stop(self) -> bool:
-        if not self.fast_mode:
-            return False
-        return any(e.type != ErrorType.PARAM_PREGRADE_FAILED for e in self.errors)
+    resolved_reference: str = ""
+    remaining_given: str = ""
+    remaining_reference: str = ""
+
+    numbers_checked_by_params: set[str] = field(default_factory=set)
+
+    fast_mode: bool = False
+    strict_match: bool = False
+
+    errors: List[ErrorDetail] = field(default_factory=list)
+    score: Optional[float] = None
+    is_perfect_match: bool = False
+
+    def __post_init__(self):
+        if not self.remaining_given:
+            self.remaining_given = self.raw_given
+        if not self.remaining_reference:
+            self.remaining_reference = self.raw_reference
+        if not self.resolved_reference:
+            self.resolved_reference = self.raw_reference
 
     def add_error(self, error: ErrorDetail) -> None:
         self.errors.append(error)
+
+    def should_stop(self, threshold: float) -> bool:
+        if not self.fast_mode:
+            return False
+        return self.score is not None and self.score >= threshold
+
+    @property
+    def final_score(self) -> float:
+        if self.is_perfect_match:
+            return 1.0
+        if self.score is not None:
+            return self.score
+        return 0.0
 
 
 class CamelCaseModel(BaseModel):
@@ -185,5 +206,8 @@ class PreGradedAnswerResponse(AnswerResponse):
             score=answer.score,
             data=answer.data,
             comment=answer.comment,
+            weight=getattr(answer, 'weight', None),
+            reference=getattr(answer, 'reference', None),
+            root_id=getattr(answer, 'root_id', None),
             pre_grade=pre_grade_result,
         )

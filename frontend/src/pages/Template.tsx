@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { Helmet } from "react-helmet-async";
@@ -22,8 +28,18 @@ import { normalizeTotalPoints } from "../features/template/utils/validation";
 import { cx } from "../features/template/utils/styles";
 import { filterTreeByVisibility } from "../features/template/utils/visibility";
 import type { FilterMode } from "../features/template/types";
+import { ConfirmModal } from "../features/templates/components/ConfirmModal";
 
 type SaveMode = "save" | "publish";
+
+type ConfirmState = {
+  open: boolean;
+  title: string;
+  message: ReactNode;
+  danger: boolean;
+  confirmText: string;
+  onConfirm: () => void;
+};
 
 interface TemplatePageProps {
   templateId: string;
@@ -62,6 +78,20 @@ export function TemplatePage({ templateId, initialData }: TemplatePageProps) {
 
   const [error, setError] = useState<string | null>(null);
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
+
+  const [confirm, setConfirm] = useState<ConfirmState>({
+    open: false,
+    title: "",
+    message: null,
+    danger: false,
+    confirmText: "Подтвердить",
+    onConfirm: () => {},
+  });
+
+  const closeConfirm = useCallback(
+    () => setConfirm((prev) => ({ ...prev, open: false })),
+    [],
+  );
 
   const canEditContent = !!template._links.update;
   const canEditMeta = !!template._links.update && template.isDraft;
@@ -153,6 +183,11 @@ export function TemplatePage({ templateId, initialData }: TemplatePageProps) {
       setError(message);
       toast.error(message);
     },
+    onSettled: (_data, _err, variables) => {
+      if (variables.mode === "publish") {
+        closeConfirm();
+      }
+    },
   });
 
   const isSaving = saveMutation.isPending;
@@ -165,6 +200,36 @@ export function TemplatePage({ templateId, initialData }: TemplatePageProps) {
     },
     [saveMutation, canEditContent, canPublish],
   );
+
+  const openPublishConfirm = useCallback(() => {
+    if (!canPublish) return;
+    setConfirm({
+      open: true,
+      title: "Опубликовать шаблон?",
+      message: (
+        <>
+          Вы действительно хотите опубликовать{" "}
+          <span className="font-bold">{name}</span>?
+          <br />
+          <span className="text-red-600 dark:text-red-400">
+            Это действие необратимо
+          </span>{" "}
+          — после публикации будет недоступно редактирование имени шаблона и максимального балла.
+          {hasUnsaved && (
+            <>
+              <br />
+              <span className="text-amber-600 dark:text-amber-400">
+                Несохранённые изменения будут сохранены перед публикацией.
+              </span>
+            </>
+          )}
+        </>
+      ),
+      danger: false,
+      confirmText: "Опубликовать",
+      onConfirm: () => saveMutation.mutate({ mode: "publish" }),
+    });
+  }, [canPublish, name, hasUnsaved, saveMutation]);
 
   useHotkeySave(canEditContent && template.isDraft, () => handleSave("save"));
 
@@ -190,6 +255,9 @@ export function TemplatePage({ templateId, initialData }: TemplatePageProps) {
       setError(message);
       toast.error(message);
     },
+    onSettled: () => {
+      closeConfirm();
+    },
   });
 
   const handleDelete = useCallback(() => {
@@ -198,11 +266,20 @@ export function TemplatePage({ templateId, initialData }: TemplatePageProps) {
       setError("Нет прав для удаления");
       return;
     }
-    const confirmed = window.confirm(
-      `Удалить шаблон "${template.name}"? Это необратимо.`,
-    );
-    if (!confirmed) return;
-    deleteMutation.mutate(href);
+    setConfirm({
+      open: true,
+      title: "Удалить шаблон?",
+      message: (
+        <>
+          Вы действительно хотите удалить{" "}
+          <span className="font-bold">{template.name}</span>? Это действие
+          необратимо.
+        </>
+      ),
+      danger: true,
+      confirmText: "Удалить",
+      onConfirm: () => deleteMutation.mutate(href),
+    });
   }, [template, deleteMutation]);
 
   const uploadImageHref = template._links.upload_image?.href;
@@ -249,7 +326,7 @@ export function TemplatePage({ templateId, initialData }: TemplatePageProps) {
         <title>{name}</title>
       </Helmet>
 
-      <div className="sticky top-0 z-[80] isolate border-b border-zinc-200/80 bg-white/80 backdrop-blur dark:border-zinc-800/80 dark:bg-[#0F0F12]/80">
+      <div className="sticky top-0 z-40 isolate border-b border-zinc-200/80 bg-white/80 backdrop-blur dark:border-zinc-800/80 dark:bg-[#0F0F12]/80">
         <div className="flex h-16 w-full items-center gap-4 px-6">
           <button
             type="button"
@@ -311,7 +388,7 @@ export function TemplatePage({ templateId, initialData }: TemplatePageProps) {
             {canPublish && (
               <button
                 type="button"
-                onClick={() => handleSave("publish")}
+                onClick={openPublishConfirm}
                 disabled={isSaving}
                 className="px-4 py-2 text-sm font-medium rounded-xl border border-blue-600 bg-blue-600 text-white disabled:opacity-40 hover:bg-blue-700 transition-colors"
               >
@@ -322,7 +399,7 @@ export function TemplatePage({ templateId, initialData }: TemplatePageProps) {
             {canDelete && (
               <button
                 type="button"
-                disabled={isSaving}
+                disabled={isSaving || deleteMutation.isPending}
                 onClick={handleDelete}
                 className="px-4 py-2 text-sm font-medium rounded-xl border border-red-600 text-red-700 dark:text-red-300 dark:border-red-900/60 hover:bg-red-50 dark:hover:bg-red-900/10 disabled:opacity-40 transition-colors"
               >
@@ -448,6 +525,17 @@ export function TemplatePage({ templateId, initialData }: TemplatePageProps) {
           </div>
         )}
       </div>
+
+      <ConfirmModal
+        isOpen={confirm.open}
+        onClose={closeConfirm}
+        onConfirm={confirm.onConfirm}
+        title={confirm.title}
+        message={confirm.message}
+        danger={confirm.danger}
+        confirmText={confirm.confirmText}
+        isPending={deleteMutation.isPending || saveMutation.isPending}
+      />
     </>
   );
 }

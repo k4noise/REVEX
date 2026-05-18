@@ -27,7 +27,7 @@ function GlobalErrorHandler() {
   const router = useRouter();
 
   useEffect(() => {
-    const handlePrivacyRedirect = (error: unknown, source: string) => {
+    const handlePrivacyRedirect = (error: unknown) => {
       if (isApiError(error) && error.status === 451) {
         const currentPath = router.state.location.pathname;
         if (currentPath !== "/privacy") {
@@ -36,15 +36,9 @@ function GlobalErrorHandler() {
       }
     };
 
-    const handleAuthError = (error: unknown, source: string) => {
+    const handleAuthError = (error: unknown) => {
       if (isJwtError(error)) {
         const currentPath = router.state.location.pathname;
-
-        console.error("[GlobalErrorHandler] JWT Error: should logout", {
-          source,
-          currentPath,
-          error,
-        });
 
         if (currentPath !== "/") {
           router.navigate({ to: "/", replace: true });
@@ -59,8 +53,8 @@ function GlobalErrorHandler() {
 
       if (!error) return;
 
-      handlePrivacyRedirect(error, "query");
-      handleAuthError(error, "query");
+      handlePrivacyRedirect(error);
+      handleAuthError(error);
     });
 
     const mutationUnsubscribe = queryClient
@@ -70,11 +64,10 @@ function GlobalErrorHandler() {
         const state = mutation?.state;
         const error = state?.error;
 
-
         if (!error) return;
 
-        handlePrivacyRedirect(error, "mutation");
-        handleAuthError(error, "mutation");
+        handlePrivacyRedirect(error);
+        handleAuthError(error);
       });
 
     return () => {
@@ -94,7 +87,7 @@ function RootComponent() {
       </Helmet>
       <Outlet />
       <GlobalErrorHandler />
-      <Toaster richColors position="top-right" />
+      <Toaster richColors position="top-center" />
       <Suspense>
         <RouterDevtools position="bottom-right" />
       </Suspense>
@@ -178,7 +171,6 @@ function RootErrorComponent({ error }: { error: unknown }) {
         <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-6">
           {message}
         </p>
-
 
         <div className="flex justify-center gap-3">
           {isRetryable && (

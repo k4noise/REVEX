@@ -298,7 +298,7 @@ export function ReportsListPage({ data }: ReportsListPageProps) {
         <title>{pageTitle}</title>
       </Helmet>
 
-      <div className="sticky top-0 z-[80] isolate border-b border-zinc-200/80 bg-white/80 backdrop-blur dark:border-zinc-800/80 dark:bg-[#0F0F12]/80">
+      <div className="sticky top-0 z-[40] isolate border-b border-zinc-200/80 bg-white/80 backdrop-blur dark:border-zinc-800/80 dark:bg-[#0F0F12]/80">
         <div className="flex h-16 w-full items-center gap-4 px-6">
           <button
             type="button"

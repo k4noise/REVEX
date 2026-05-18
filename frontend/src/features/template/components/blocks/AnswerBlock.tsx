@@ -9,7 +9,7 @@ function preGradeLabel(score: number | null): string {
   if (score === null) return "Нет данных";
   if (score >= 1) return " верно";
   if (score <= 0) return " неверно";
-  return "Частично верно";
+  return " частично верно";
 }
 
 function preGradeColor(score: number | null): string {
@@ -829,7 +829,7 @@ export const AnswerBlock = memo(function AnswerBlock(props: CommonBlockProps) {
       )}
 
       {isTemplateEdit && scoringInfo && (
-        <div className="mt-3 flex items-center gap-4 text-sm text-zinc-500 dark:text-zinc-400">
+        <div className="flex items-center gap-4 text-sm text-zinc-500 dark:text-zinc-400">
           <div className="flex items-center gap-2">
             <span>Вес:</span>
             <input

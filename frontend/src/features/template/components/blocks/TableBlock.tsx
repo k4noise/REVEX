@@ -1,4 +1,4 @@
-import { useMemo, memo } from "react";
+import { useMemo, memo, useRef, useState, useEffect } from "react";
 import type { CommonBlockProps } from "../../types";
 import type { TemplateElementResponse } from "../../../../model/templateElement";
 import { cx } from "../../utils/styles";
@@ -17,7 +17,227 @@ function collectAnswerIds(nodes: TemplateElementResponse[]): string[] {
 }
 
 function hasAnswerChild(cell: TemplateElementResponse): boolean {
-  return cell.children?.some((c) => c.type === "answer") ?? false;
+  const walk = (node: TemplateElementResponse): boolean => {
+    if (node.type === "answer") return true;
+    return node.children?.some(walk) ?? false;
+  };
+  return cell.children?.some(walk) ?? false;
+}
+
+function computeCellPositions(rows: TemplateElementResponse[]) {
+  const positions = new Map<string, number>();
+  const occupiedCells: Map<number, Map<number, number>> = new Map();
+
+  rows.forEach((row, rowIndex) => {
+    if (row.type !== "row" || !row.children) return;
+
+    let currentColumn = 0;
+    const occupiedInThisRow = occupiedCells.get(rowIndex) || new Map();
+
+    row.children.forEach((cell) => {
+      if (cell.type !== "cell") return;
+
+      while (occupiedInThisRow.has(currentColumn)) {
+        currentColumn++;
+      }
+
+      positions.set(cell.id, currentColumn);
+
+      const colspan =
+        typeof cell.colspan === "number" && cell.colspan > 1 ? cell.colspan : 1;
+      const rowspan =
+        typeof cell.rowspan === "number" && cell.rowspan > 1 ? cell.rowspan : 1;
+
+      for (let r = 0; r < rowspan; r++) {
+        const targetRow = rowIndex + r;
+        if (!occupiedCells.has(targetRow)) {
+          occupiedCells.set(targetRow, new Map());
+        }
+        const rowMap = occupiedCells.get(targetRow)!;
+
+        for (let c = 0; c < colspan; c++) {
+          rowMap.set(currentColumn + c, 1);
+        }
+      }
+
+      currentColumn += colspan;
+    });
+  });
+
+  return positions;
+}
+
+function DoubleScrollbar({
+  children,
+  rowCount,
+}: {
+  children: React.ReactNode;
+  rowCount: number;
+}) {
+  const topScrollRef = useRef<HTMLDivElement>(null);
+  const bottomScrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [showScrollbar, setShowScrollbar] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [scrollState, setScrollState] = useState({
+    canScrollLeft: false,
+    canScrollRight: false,
+  });
+
+  const shouldLimitHeight = rowCount > 15;
+  const maxHeight = isExpanded ? "none" : shouldLimitHeight ? "600px" : "none";
+
+  useEffect(() => {
+    const content = contentRef.current;
+    if (!content) return;
+
+    const checkScroll = () => {
+      const hasOverflow = content.scrollWidth > content.clientWidth;
+      setShowScrollbar(hasOverflow);
+
+      setScrollState({
+        canScrollLeft: content.scrollLeft > 0,
+        canScrollRight:
+          content.scrollLeft < content.scrollWidth - content.clientWidth - 1,
+      });
+    };
+
+    checkScroll();
+    const resizeObserver = new ResizeObserver(checkScroll);
+    resizeObserver.observe(content);
+
+    return () => resizeObserver.disconnect();
+  }, []);
+
+  const syncScroll =
+    (source: "top" | "bottom" | "content") =>
+    (e: React.UIEvent<HTMLDivElement>) => {
+      const scrollLeft = e.currentTarget.scrollLeft;
+
+      if (source !== "top" && topScrollRef.current) {
+        topScrollRef.current.scrollLeft = scrollLeft;
+      }
+      if (source !== "bottom" && bottomScrollRef.current) {
+        bottomScrollRef.current.scrollLeft = scrollLeft;
+      }
+      if (source !== "content" && contentRef.current) {
+        contentRef.current.scrollLeft = scrollLeft;
+      }
+
+      if (contentRef.current) {
+        setScrollState({
+          canScrollLeft: contentRef.current.scrollLeft > 0,
+          canScrollRight:
+            contentRef.current.scrollLeft <
+            contentRef.current.scrollWidth - contentRef.current.clientWidth - 1,
+        });
+      }
+    };
+
+  return (
+    <div className="relative">
+      {showScrollbar && (
+        <div className="flex items-center gap-2 mb-2">
+          <div
+            ref={topScrollRef}
+            onScroll={syncScroll("top")}
+            className="overflow-x-auto overflow-y-hidden flex-1"
+            style={{ height: "12px" }}
+          >
+            <div
+              style={{
+                width: contentRef.current?.scrollWidth || "100%",
+                height: "1px",
+              }}
+            />
+          </div>
+
+          {shouldLimitHeight && (
+            <button
+              type="button"
+              onClick={() => setIsExpanded(!isExpanded)}
+              className="shrink-0 text-xs text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors"
+              title={isExpanded ? "Свернуть таблицу" : "Развернуть таблицу"}
+            >
+              {isExpanded ? (
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              ) : (
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"
+                  />
+                </svg>
+              )}
+            </button>
+          )}
+        </div>
+      )}
+
+      <div className="relative">
+        {scrollState.canScrollLeft && (
+          <div className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-white/80 to-transparent dark:from-zinc-900/80 pointer-events-none z-10" />
+        )}
+
+        {scrollState.canScrollRight && (
+          <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-white/80 to-transparent dark:from-zinc-900/80 pointer-events-none z-10" />
+        )}
+
+        <div
+          ref={contentRef}
+          onScroll={syncScroll("content")}
+          className="overflow-auto rounded-xl border border-zinc-200 dark:border-zinc-800"
+          style={{ maxHeight }}
+        >
+          {children}
+        </div>
+      </div>
+
+      {shouldLimitHeight && !isExpanded && (
+        <div className="mt-2 text-center">
+          <button
+            type="button"
+            onClick={() => setIsExpanded(true)}
+            className="text-xs text-zinc-500 hover:text-blue-600 dark:text-zinc-400 dark:hover:text-blue-400 transition-colors inline-flex items-center gap-1"
+          >
+            <span>Показать все ({rowCount} строк)</span>
+            <svg
+              className="w-3 h-3"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M19 9l-7 7-7-7"
+              />
+            </svg>
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export const TableBlock = memo(function TableBlock(props: CommonBlockProps) {
@@ -38,7 +258,13 @@ export const TableBlock = memo(function TableBlock(props: CommonBlockProps) {
     [element.children],
   );
 
+  const cellPositions = useMemo(
+    () => computeCellPositions(element.children ?? []),
+    [element.children],
+  );
+
   const hasGradableAnswers = isGradingMode && answerIds.length > 0;
+  const rowCount = element.children?.length ?? 0;
 
   const handleAllCorrect = () => {
     for (const id of answerIds) onAnswerGradeChange?.(id, 1);
@@ -94,14 +320,16 @@ export const TableBlock = memo(function TableBlock(props: CommonBlockProps) {
         </div>
       )}
 
-      <div className="w-full overflow-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
+      <DoubleScrollbar rowCount={rowCount}>
         <table className="w-full text-left text-sm text-zinc-700 dark:text-zinc-300">
           <tbody>
-            {element.children.map((row) => (
+            {element.children.map((row, rowIndex) => (
               <TableRow
                 key={row.id}
                 {...restProps}
                 element={row}
+                rowIndex={rowIndex}
+                cellPositions={cellPositions}
                 isGradingMode={isGradingMode}
                 isReadOnly={isReadOnly}
                 isReportMode={isReportMode}
@@ -113,13 +341,18 @@ export const TableBlock = memo(function TableBlock(props: CommonBlockProps) {
             ))}
           </tbody>
         </table>
-      </div>
+      </DoubleScrollbar>
     </div>
   );
 });
 
-const TableRow = memo(function TableRow(props: CommonBlockProps) {
-  const { element, ...restProps } = props;
+interface TableRowProps extends CommonBlockProps {
+  rowIndex: number;
+  cellPositions: Map<string, number>;
+}
+
+const TableRow = memo(function TableRow(props: TableRowProps) {
+  const { element, rowIndex, cellPositions, ...restProps } = props;
   if (element.type !== "row") return null;
 
   return (
@@ -131,12 +364,13 @@ const TableRow = memo(function TableRow(props: CommonBlockProps) {
         "group/row",
       )}
     >
-      {element.children?.map((cell, cellIndex) => (
+      {element.children?.map((cell) => (
         <TableCell
           key={cell.id}
           {...restProps}
           element={cell}
-          isFirstColumn={cellIndex === 0}
+          isFirstColumn={cellPositions.get(cell.id) === 0}
+          isFirstRow={rowIndex === 0}
         />
       ))}
     </tr>
@@ -145,12 +379,14 @@ const TableRow = memo(function TableRow(props: CommonBlockProps) {
 
 interface TableCellProps extends CommonBlockProps {
   isFirstColumn?: boolean;
+  isFirstRow?: boolean;
 }
 
 const TableCell = memo(function TableCell(props: TableCellProps) {
   const {
     element,
     isFirstColumn,
+    isFirstRow,
     convertCellToAnswer,
     clearCell,
     isReadOnly,
@@ -165,7 +401,11 @@ const TableCell = memo(function TableCell(props: TableCellProps) {
   const hasAnswer = hasAnswerChild(element);
   const hasContent = (element.children?.length ?? 0) > 0;
   const showAddAnswer =
-    canEdit && !hasAnswer && !isFirstColumn && !!convertCellToAnswer;
+    canEdit &&
+    !hasAnswer &&
+    !isFirstColumn &&
+    !isFirstRow &&
+    !!convertCellToAnswer;
   const showClear = canEdit && hasAnswer && !!clearCell;
 
   const rowSpan =

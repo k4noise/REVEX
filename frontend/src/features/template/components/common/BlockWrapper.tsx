@@ -38,7 +38,7 @@ export const BlockWrapper = memo(function BlockWrapper(
   return (
     <div className="group relative rounded-2xl" data-element-id={element.id}>
       {canShowMenu && (
-        <div className="absolute right-3 top-2 z-50">
+        <div className="absolute right-3 top-2 z-20">
           <div className="relative">
             <button
               ref={menuButtonRef}
