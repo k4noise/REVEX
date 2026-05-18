@@ -30,11 +30,11 @@ class HintGenerator:
 
         text = re.sub(r"<\|.*?\|>", "", text, flags=re.DOTALL).strip()
 
-        think_match = re.search(r"</think>\s*(.*)", text, flags=re.DOTALL)
+        think_match = re.search(r"\s*(.*)", text, flags=re.DOTALL)
         if think_match:
             text = think_match.group(1).strip()
         else:
-            text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+            text = re.sub(r".*?", "", text, flags=re.DOTALL).strip()
 
         text = re.sub(r"`[^`]+`", "[команда]", text)
 
@@ -83,14 +83,19 @@ class HintGenerator:
     ) -> str:
         question_part = f"Вопрос: {question}\n" if question else ""
         theory_part = f"Данные:\n{theory[:2000]}\n" if theory else ""
+        error_desc = (
+            f"Ошибка: {error.type.value}. Ожидалось: {error.expected}. Фактически: {error.actual}\n"
+            if error else ""
+        )
 
-        return f"""{question_part}{theory_part}
+        return f"""{question_part}{theory_part}{error_desc}
 Студент написал: {student_answer or '(пусто)'}
 Это неправильно.
 
 Задай ОДИН короткий наводящий вопрос (до 15 слов).
-Укажи конкретный столбец или строку таблицы.
-Не перечисляй значения. Не давай ответ."""
+Если есть таблица — укажи конкретный столбец/строку.
+Если таблицы нет — укажи, ЧТО именно не хватает или ЧТО неверно в ответе (шаг, значение, логика).
+Не перечисляй значения. Не давай готовый ответ. Не пиши приветствия."""
 
     def _parse_error_detail(self, raw) -> Optional[ErrorDetail]:
         if raw is None:
@@ -105,7 +110,7 @@ class HintGenerator:
                 return ErrorDetail(
                     type=error_type,
                     expected=raw.get("expected", ""),
-                    actual=raw.get("actual"),
+                    actual=raw.get("actual", ""),
                 )
             except (ValueError, KeyError) as e:
                 logger.warning("hint.parse_error_detail.failed", error=str(e), raw=raw)
@@ -170,10 +175,11 @@ class HintGenerator:
                     {
                         "role": "system",
                         "content": (
-                            "Ты помогаешь студенту найти ошибку. "
-                            "Пиши ОДИН короткий вопрос (до 15 слов). "
-                            "Укажи куда смотреть в таблице. "
-                            "Не перечисляй значения. Не давай ответ. /no_think"
+                            "Ты помогаешь студенту найти ошибку в ответе. "
+                            "Пиши ОДИН короткий наводящий вопрос (до 15 слов). "
+                            "Если есть таблица — укажи столбец/строку. "
+                            "Если таблицы нет — укажи конкретно: чего не хватает или что неверно (шаг, значение, логика). "
+                            "Не давай готовый ответ. Не перечисляй данные. /no_think"
                         ),
                     },
                     {
@@ -187,21 +193,20 @@ class HintGenerator:
                     },
                     {
                         "role": "assistant",
-                        "content": "Какая разница между значениями A и B в таблице?",
+                        "content": "Какая разница между A и B в таблице?",
                     },
                     {
                         "role": "user",
                         "content": (
-                            "Вопрос: Укажите адрес шлюза.\n"
-                            "Данные:\nТаблица:\nУстройство | Интерфейс | IP\n"
-                            "Сервер1 | eth0 | 10.0.0.1\nСервер2 | eth0 | 10.0.0.2\n\n"
-                            "Студент написал: 192.168.1.1\nЭто неправильно.\n\n"
+                            "Вопрос: Решите уравнение 2x + 5 = 15.\n"
+                            "Данные: Правила решения линейных уравнений\n"
+                            "Студент написал: x=3\nЭто неправильно.\n\n"
                             "Задай ОДИН короткий наводящий вопрос (до 15 слов)."
                         ),
                     },
                     {
                         "role": "assistant",
-                        "content": "В каком столбце таблицы указан IP нужного устройства?",
+                        "content": "Какой шаг решения ты пропустил?",
                     },
                     {"role": "user", "content": user_prompt},
                 ],

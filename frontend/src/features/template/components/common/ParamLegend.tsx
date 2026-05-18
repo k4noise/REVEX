@@ -34,13 +34,18 @@ export function ParamLegend({ text, groups }: ParamLegendProps) {
       <div className="text-xs text-zinc-400 dark:text-zinc-500 mb-1">
         Параметры:
       </div>
-      <div className="space-y-1">
+      <div className="space-y-2">
         {referencedParams.map((p) => (
-          <div key={p.id} className="flex items-start gap-2 text-sm">
-            <code className="text-blue-600 dark:text-blue-400 shrink-0 text-xs font-mono break-all leading-relaxed">
+          <div
+            key={p.id}
+            className="flex flex-wrap items-start gap-x-2 gap-y-1 text-sm"
+          >
+            <code className="text-blue-600 dark:text-blue-400 text-[12px] font-mono break-all min-w-0 max-w-full leading-relaxed bg-blue-50/50 dark:bg-blue-900/20 px-1 rounded">
               {p.id}
             </code>
-            <span className="text-zinc-700 dark:text-zinc-300">{p.text}</span>
+            <span className="text-zinc-700 dark:text-zinc-300 flex-1 min-w-[80px] break-words">
+              {p.text}
+            </span>
           </div>
         ))}
       </div>

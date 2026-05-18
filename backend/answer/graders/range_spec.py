@@ -3,36 +3,74 @@ from functools import lru_cache
 from typing import List, Tuple, Union
 
 
+NumericValue = Union[int, float]
+RangeTuple = Tuple[NumericValue, NumericValue]
+SpecPart = Union[int, float, str, RangeTuple]
+
+
 class RangeSpec:
-    _RE_RANGE_FLOAT = re.compile(r"^\s*([+-]?\d+(?:[.,]\d+)?)\s*-\s*([+-]?\d+(?:[.,]\d+)?)\s*$")
-    _RE_FLOAT = re.compile(r"^[+-]?\d+[.,]\d+$")
-    _RE_INT = re.compile(r"^[+-]?\d+$")
+    PATTERN_NUMERIC_RANGE = re.compile(
+        r'^\s*([+-]?\d+(?:[.,]\d+)?)\s*-\s*([+-]?\d+(?:[.,]\d+)?)\s*$'
+    )
+    PATTERN_FLOAT = re.compile(r'^[+-]?\d+[.,]\d+$')
+    PATTERN_INT = re.compile(r'^[+-]?\d+$')
+    PATTERN_DASHES = re.compile(r'[\u2010\u2011\u2012\u2013\u2014\u2212]')
+    PATTERN_DASH_SPACES = re.compile(r'\s*-\s*')
 
     def __init__(self, raw: str):
-        self.raw = raw.strip()
-        self.parts: List[Union[int, float, str, Tuple[Union[int, float], Union[int, float]]]] = []
+        normalized = self.PATTERN_DASHES.sub('-', raw)
+        normalized = self.PATTERN_DASH_SPACES.sub('-', normalized)
+        self.raw = normalized.strip()
+        self.parts: List[SpecPart] = []
 
-        for token in (tok.strip() for tok in self.raw.split("|") if tok.strip()):
-            if match := self._RE_RANGE_FLOAT.fullmatch(token):
-                start_str = match.group(1).replace(',', '.')
-                end_str = match.group(2).replace(',', '.')
+        for token in (tok.strip() for tok in self.raw.split('|') if tok.strip()):
+            self.parts.append(self._parse_token(token))
 
-                if '.' in start_str or '.' in end_str:
-                    start, end = sorted((float(start_str), float(end_str)))
-                else:
-                    start, end = sorted((int(start_str), int(end_str)))
-                self.parts.append((start, end))
-            elif self._RE_INT.fullmatch(token):
-                self.parts.append(int(token))
-            elif self._RE_FLOAT.fullmatch(token):
-                self.parts.append(float(token.replace(',', '.')))
+    def _parse_token(self, token: str) -> SpecPart:
+        range_match = self.PATTERN_NUMERIC_RANGE.fullmatch(token)
+        if range_match:
+            start_str = range_match.group(1).replace(',', '.')
+            end_str = range_match.group(2).replace(',', '.')
+
+            if '.' in start_str or '.' in end_str:
+                start, end = float(start_str), float(end_str)
             else:
-                self.parts.append(token)
+                start, end = int(start_str), int(end_str)
+
+            return (min(start, end), max(start, end))
+
+        if self.PATTERN_INT.fullmatch(token):
+            return int(token)
+
+        if self.PATTERN_FLOAT.fullmatch(token):
+            return float(token.replace(',', '.'))
+
+        return token
 
     @classmethod
     @lru_cache(maxsize=256)
     def from_raw(cls, raw: str) -> "RangeSpec":
         return cls(raw)
+
+    def get_fallback_value(self) -> str:
+        if not self.parts:
+            return "1"
+
+        first_part = self.parts[0]
+
+        if isinstance(first_part, tuple):
+            return str(int(first_part[0]))
+
+        if isinstance(first_part, (int, float)):
+            return str(int(first_part))
+
+        if isinstance(first_part, str):
+            try:
+                return str(int(float(first_part)))
+            except ValueError:
+                return "1"
+
+        return "1"
 
     @property
     def is_numeric(self) -> bool:
@@ -43,51 +81,39 @@ class RangeSpec:
         for part in self.parts:
             if isinstance(part, float):
                 return True
-            if isinstance(part, tuple) and any(isinstance(subpart, float) for subpart in part):
-                return True
-        return False
-
-    @property
-    def is_mixed(self) -> bool:
-        has_str = any(isinstance(part, str) for part in self.parts)
-        has_num = any(isinstance(part, (int, float, tuple)) for part in self.parts)
-        return has_str and has_num
-
-    @property
-    def values(self) -> List[Union[str, int, float]]:
-        result: List[Union[str, int, float]] = []
-        for part in self.parts:
             if isinstance(part, tuple):
-                result.append(f"{part[0]}..{part[1]}")
-            else:
-                result.append(part)
-        return result
+                if isinstance(part[0], float) or isinstance(part[1], float):
+                    return True
+        return False
 
     def regex_fragment(self) -> str:
         if self.is_numeric:
-            return r"(-?\d+(?:[.,]\d+)?)"
-        return r"(\S+(?:\s+\S+)*)"
+            return r'(-?\d+(?:[.,]\d+)?)'
+        return r'(\S+(?:\s+\S+)*)'
 
     def match(self, text: str) -> bool:
         stripped = text.strip()
-        num_str = stripped.replace(',', '.')
-        is_number_like = re.fullmatch(r"^-?\d+(?:\.\d+)?$", num_str)
+        normalized_number = stripped.replace(',', '.')
 
-        if is_number_like:
+        if re.fullmatch(r'^-?\d+(?:\.\d+)?$', normalized_number):
             try:
-                value = float(num_str)
+                numeric_value = float(normalized_number)
+
                 for part in self.parts:
                     if isinstance(part, tuple):
-                        start, end = part
-                        if start <= value <= end:
-                            if not self.is_float and not value.is_integer():
+                        range_start, range_end = part
+                        if range_start <= numeric_value <= range_end:
+                            if not self.is_float and not numeric_value.is_integer():
                                 continue
                             return True
                     elif isinstance(part, (int, float)):
-                        if value == part:
+                        if numeric_value == part:
                             return True
             except ValueError:
                 pass
 
         lowered = stripped.lower()
-        return any(part.lower() == lowered for part in self.parts if isinstance(part, str))
+        return any(
+            isinstance(part, str) and part.lower() == lowered
+            for part in self.parts
+        )

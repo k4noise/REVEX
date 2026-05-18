@@ -6,11 +6,11 @@ from typing import Sequence, Dict, List, Optional
 
 import structlog
 
-from answer.graders.pre_grader import PreGraderService
+from answer.services.pre_grader import PreGraderService
 from answer.repository import AnswerRepository
 from answer.services.answer import AnswerService
 from answer.services.param_map import ParameterMapBuilder
-from answer.services.pregrade_explainer import PregradeExplainerService
+from answer.services.explainer import PregradeExplainerService
 from core.auth.user_model import User, UserRole
 from core.db import AsyncSessionLocal
 from report.repository import ReportRepository

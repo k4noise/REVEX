@@ -18,8 +18,6 @@ export const queryClient = new QueryClient({
           });
         }
 
-        // Важно: используем isApiError вместо instanceof,
-        // чтобы не ловить сюрпризы с разными копиями класса в бандле.
         if (isApiError(error) && error.status === 451) return false;
         if (isJwtError(error)) return false;
 

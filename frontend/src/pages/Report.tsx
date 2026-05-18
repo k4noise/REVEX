@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { Helmet } from "react-helmet-async";
 import { useNavigate } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -29,6 +35,7 @@ import {
   useGradingQueue,
   clearGradingQueue,
 } from "../features/grading/useGradingQueue";
+import { ConfirmModal } from "../features/templates/components/ConfirmModal";
 
 const statusLabel: Record<ReportStatus, string> = {
   created: "В работе",
@@ -46,6 +53,15 @@ const statusClassName: Record<ReportStatus, string> = {
     "border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
   created:
     "border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
+};
+
+type ConfirmState = {
+  open: boolean;
+  title: string;
+  message: ReactNode;
+  danger: boolean;
+  confirmText: string;
+  onConfirm: () => void;
 };
 
 type ReportPageProps = {
@@ -122,6 +138,20 @@ export const ReportPage = ({ reportId, initialData }: ReportPageProps) => {
 
   const [filterMode, setFilterMode] = useState<FilterMode>(
     isGradingMode ? "important" : "all",
+  );
+
+  const [confirm, setConfirm] = useState<ConfirmState>({
+    open: false,
+    title: "",
+    message: null,
+    danger: false,
+    confirmText: "Подтвердить",
+    onConfirm: () => {},
+  });
+
+  const closeConfirm = useCallback(
+    () => setConfirm((prev) => ({ ...prev, open: false })),
+    [],
   );
 
   const reportAnswers: (AnswerData | PreGradedAnswerData)[] =
@@ -454,6 +484,9 @@ export const ReportPage = ({ reportId, initialData }: ReportPageProps) => {
     onError: (err) => {
       toast.error(err instanceof ApiError ? err.message : "Ошибка отправки");
     },
+    onSettled: () => {
+      closeConfirm();
+    },
   });
 
   const unsubmitMutation = useMutation({
@@ -544,6 +577,9 @@ export const ReportPage = ({ reportId, initialData }: ReportPageProps) => {
     onError: (err) => {
       toast.error(err instanceof ApiError ? err.message : "Ошибка оценки");
     },
+    onSettled: () => {
+      closeConfirm();
+    },
   });
 
   const isPending =
@@ -551,6 +587,47 @@ export const ReportPage = ({ reportId, initialData }: ReportPageProps) => {
     submitMutation.isPending ||
     unsubmitMutation.isPending ||
     gradeMutation.isPending;
+
+  const isConfirmPending = submitMutation.isPending || gradeMutation.isPending;
+
+  const openSubmitConfirm = () => {
+    setConfirm({
+      open: true,
+      title: "Отправить работу?",
+      message: <>Отправить работу на проверку?</>,
+      danger: false,
+      confirmText: "Отправить",
+      onConfirm: () => submitMutation.mutate(),
+    });
+  };
+
+  const openGradeConfirm = () => {
+    const isQueueNext = gradingQueue.isInQueue && gradingQueue.hasNext;
+    setConfirm({
+      open: true,
+      title: isQueueNext ? "Оценить и перейти дальше?" : "Выставить оценку?",
+      message: isQueueNext ? (
+        <>
+          Оценить и перейти к следующему{" "}
+          <span className="font-bold">
+            ({gradingQueue.currentIndex + 2}/{gradingQueue.totalCount})
+          </span>
+          ?
+        </>
+      ) : (
+        <>
+          Выставить оценку{" "}
+          <span className="font-bold">
+            {totalScore} / {maxScore}
+          </span>
+          ?
+        </>
+      ),
+      danger: false,
+      confirmText: isQueueNext ? "Оценить + след." : "Оценить",
+      onConfirm: () => gradeMutation.mutate(),
+    });
+  };
 
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -599,7 +676,7 @@ export const ReportPage = ({ reportId, initialData }: ReportPageProps) => {
         <title>{pageTitle}</title>
       </Helmet>
 
-      <div className="sticky top-0 z-[80] isolate border-b border-zinc-200/80 bg-white/80 backdrop-blur dark:border-zinc-800/80 dark:bg-[#0F0F12]/80">
+      <div className="sticky top-0 z-[40] isolate border-b border-zinc-200/80 bg-white/80 backdrop-blur dark:border-zinc-800/80 dark:bg-[#0F0F12]/80">
         <div className="flex h-16 w-full items-center gap-4 px-6">
           <button
             type="button"
@@ -741,11 +818,7 @@ export const ReportPage = ({ reportId, initialData }: ReportPageProps) => {
             {canSubmit && (
               <button
                 type="button"
-                onClick={() => {
-                  if (window.confirm("Отправить работу на проверку?")) {
-                    submitMutation.mutate();
-                  }
-                }}
+                onClick={openSubmitConfirm}
                 disabled={isPending}
                 className="rounded-xl border border-blue-600 bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
               >
@@ -756,16 +829,7 @@ export const ReportPage = ({ reportId, initialData }: ReportPageProps) => {
             {isGradingMode && (
               <button
                 type="button"
-                onClick={() => {
-                  const label =
-                    gradingQueue.isInQueue && gradingQueue.hasNext
-                      ? `Оценить и перейти к следующему (${gradingQueue.currentIndex + 2}/${gradingQueue.totalCount})?`
-                      : `Выставить оценку ${totalScore} / ${maxScore}?`;
-
-                  if (window.confirm(label)) {
-                    gradeMutation.mutate();
-                  }
-                }}
+                onClick={openGradeConfirm}
                 disabled={isPending || !allAnswersScored}
                 title={!allAnswersScored ? "Оцените все ответы" : undefined}
                 className="rounded-xl border border-emerald-600 bg-emerald-600 px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 disabled:opacity-50"
@@ -842,6 +906,17 @@ export const ReportPage = ({ reportId, initialData }: ReportPageProps) => {
           />
         </div>
       </div>
+
+      <ConfirmModal
+        isOpen={confirm.open}
+        onClose={closeConfirm}
+        onConfirm={confirm.onConfirm}
+        title={confirm.title}
+        message={confirm.message}
+        danger={confirm.danger}
+        confirmText={confirm.confirmText}
+        isPending={isConfirmPending}
+      />
     </>
   );
 };

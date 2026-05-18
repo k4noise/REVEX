@@ -11,7 +11,7 @@ import numpy as np
 import structlog
 from pydantic import BaseModel, Field
 
-from answer.graders.pre_grader import PreGraderService
+from answer.services.pre_grader import PreGraderService
 from answer.schemas import AnswerResponse, ErrorType
 from answer.utils.embedder import TextEmbedder
 from core.auth.user_model import User
